@@ -1,0 +1,10 @@
+{
+  "name": "check-tree",
+  "version": "0.1.0",
+  "description": "Plans as pass/fail checks for teams of AI coding agents: a builder gets one check and cannot finish while it fails, plus guardrails that held under real use.",
+  "author": { "name": "Sarah Todd Davidson", "url": "https://www.sarah-in-dev.com" },
+  "homepage": "https://github.com/Sarah-in-dev/check-tree",
+  "repository": "https://github.com/Sarah-in-dev/check-tree",
+  "license": "MIT",
+  "keywords": ["agents", "hooks", "planning", "testing", "guardrails", "multi-agent"]
+}

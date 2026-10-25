@@ -1,0 +1,16 @@
+{
+  "base_ref": "main",
+  "remote": "origin",
+  "max_send_backs": 2,
+  "check_timeout_seconds": 1800,
+  "stalled_after_days": 3,
+  "scope": "enforce",
+  "guards": {
+    "agent_cap": 8,
+    "agent_max_age_hours": 6,
+    "expensive_models": ["opus"],
+    "model_approval_marker": "MODEL-APPROVED:",
+    "subagents_may_dispatch": false,
+    "required_reads_file": "CLAUDE.md"
+  }
+}
