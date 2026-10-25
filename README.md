@@ -88,7 +88,7 @@ Then dispatch builders from Claude Code with `Check: payments/<id>` in the promp
 passing, `check-tree land payments <id>` merges its branch into the program's integration branch
 (`check-tree/payments`). Open one pull request from there when the milestone is proven.
 
-`examples/quickstart.sh` builds a throwaway repo and walks through all of it in under a minute.
+`examples/quickstart.sh` builds a throwaway repo and walks through all of it in under a minute. It needs only git and Python 3.9 or newer.
 
 ## Configuration
 
@@ -125,7 +125,7 @@ Stated, not hidden:
 - `docs/pipeline-patterns.md`: the CI changes that made "done is a passing check" trustworthy for us (the
   pipeline owns the tests, affected tests before batching, the full suite once in the merge queue, scripted
   review instead of AI review, shrink-only rule ratchets).
-- `tests/`: every hook driven the way Claude Code drives it, shown refusing and allowing.
+- `tests/`: every hook driven the way Claude Code drives it, shown refusing and allowing (run with pytest).
 
 ## Status
 
