@@ -87,6 +87,7 @@ check-tree start payments           # the lead's opening page: ready checks, wha
 Then dispatch builders from Claude Code with `Check: payments/<id>` in the prompt. When a builder returns
 passing, `check-tree land payments <id>` merges its branch into the program's integration branch
 (`check-tree/payments`). Open one pull request from there when the milestone is proven.
+`check-tree clean payments` removes builder worktrees that hold no unlanded work.
 
 `examples/quickstart.sh` builds a throwaway repo and walks through all of it in under a minute. It needs only git and Python 3.9 or newer.
 
@@ -125,6 +126,10 @@ Stated, not hidden:
 - `docs/pipeline-patterns.md`: the CI changes that made "done is a passing check" trustworthy for us (the
   pipeline owns the tests, affected tests before batching, the full suite once in the merge queue, scripted
   review instead of AI review, shrink-only rule ratchets).
+- `pipeline/`: ready-to-use scripts for three of those patterns, standard library only:
+  `impacted_tests.py` (which tests a change reaches, in parallel shards), `ratchet.py` (rules whose violation
+  counts can only go down) and `scripted_review.py` (the review a script can decide), plus
+  `example-workflow.yml` wiring them into GitHub Actions with the full suite once in the merge queue.
 - `tests/`: every hook driven the way Claude Code drives it, shown refusing and allowing (run with pytest).
 
 ## Status

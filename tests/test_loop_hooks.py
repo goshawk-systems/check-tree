@@ -139,3 +139,36 @@ def test_files_no_program_owns_are_untouched(approved):
 
 def test_an_unapproved_programs_files_are_not_locked(repo):
     assert edit(repo, repo / "src" / "demo" / "__init__.py") is None
+
+
+# ── no leftovers ──
+
+def test_a_dispatch_another_guard_refuses_leaves_no_worktree(approved):
+    core.run_checks(approved, "demo")
+    out = dispatch(approved, "Fix the adder.\nCheck: demo/obj", tool_input={
+        "prompt": "Fix the adder.\nCheck: demo/obj", "model": "opus"})
+    assert decision(out) == "deny" and "expensive" in out["hookSpecificOutput"]["permissionDecisionReason"]
+    wt_dir = approved / ".check-tree" / "worktrees"
+    assert not wt_dir.exists() or not any(wt_dir.iterdir())
+
+
+def test_clean_removes_landed_and_abandoned_worktrees_and_keeps_unlanded_work(approved, tmp_path):
+    wt_done, transcript = bind(approved, tmp_path)
+    (wt_done / "src" / "demo" / "__init__.py").write_text("def add(a, b):\n    return a + b\n")
+    sh(wt_done, "git", "commit", "-q", "-am", "fix add")
+    assert stop(approved, transcript) is None
+    assert cli(approved, "land", "demo", "obj").returncode == 0
+    out = dispatch(approved, "Another try.\nCheck: demo/obj")  # obj is not passing at main yet, so it binds
+    wt_idle = pathlib.Path(re.search(r"(?m)^Worktree: (.+)$",
+                                     out["hookSpecificOutput"]["updatedInput"]["prompt"]).group(1))
+    out = dispatch(approved, "Third try.\nCheck: demo/obj")
+    wt_work = pathlib.Path(re.search(r"(?m)^Worktree: (.+)$",
+                                     out["hookSpecificOutput"]["updatedInput"]["prompt"]).group(1))
+    (wt_work / "notes.txt").write_text("in progress\n")
+    sh(wt_work, "git", "add", "notes.txt")
+    sh(wt_work, "git", "commit", "-q", "-m", "unlanded work")
+    report = cli(approved, "clean", "demo", "--hours", "0").stdout
+    assert f"removed {wt_done.name} (landed)" in report
+    assert f"removed {wt_idle.name} (abandoned with no work)" in report
+    assert f"kept {wt_work.name}: 1 commit(s) not yet landed" in report
+    assert not wt_done.exists() and not wt_idle.exists() and wt_work.exists()

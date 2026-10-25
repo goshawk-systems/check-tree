@@ -1,0 +1,59 @@
+# Example GitHub Actions workflow using the three pipeline scripts. Copy to .github/workflows/ and adapt.
+# On a pull request: the rule ratchet, the scripted review, and the tests this change reaches, in 4 shards.
+# In the merge queue (merge_group): the full suite, once per batch.
+# Make "ratchet", "scripted-review" and "impacted-tests" required checks on the pull request, and
+# "full-suite" required in the merge queue.
+name: checks
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+  merge_group:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  ratchet:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 pipeline/ratchet.py check
+
+  scripted-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - run: gh pr view "${{ github.event.pull_request.number }}" --json body -q .body > body.md
+        env: { GH_TOKEN: "${{ github.token }}" }
+      - run: python3 pipeline/scripted_review.py --body body.md --base "origin/${{ github.base_ref }}"
+
+  impacted-tests:
+    if: github.event_name == 'pull_request' && github.event.action != 'edited'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: { shard: [1, 2, 3, 4] }
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt pytest
+      - run: |
+          python3 pipeline/impacted_tests.py --base "origin/${{ github.base_ref }}" --shard ${{ matrix.shard }}/4 > selected.txt
+          if [ -s selected.txt ]; then python3 -m pytest -q $(cat selected.txt); else echo "no tests reached"; fi
+
+  full-suite:
+    if: github.event_name == 'merge_group'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt pytest
+      - run: python3 -m pytest -q

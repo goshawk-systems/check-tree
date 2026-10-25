@@ -11,22 +11,29 @@ from __future__ import annotations
 import _common as C
 
 
-def main(data: dict) -> None:
+def decide(data: dict) -> "str | None":
+    """The refusal reason for this dispatch, or None. Also called by check_brief before it creates anything."""
     if data.get("tool_name") not in C.AGENT_TOOLS:
-        return
+        return None
     root = C.root_for(data)
     cfg = C.guard_config(root)
     if C.in_subagent(data) and not cfg["subagents_may_dispatch"]:
-        C.deny("check-tree: a subagent does not start other agents. Return to the lead with what you need.")
-        return
+        return "check-tree: a subagent does not start other agents. Return to the lead with what you need."
     ti = data.get("tool_input") or {}
     model = str(ti.get("model") or "").lower()
     if not model or not any(m.lower() in model for m in cfg["expensive_models"]):
-        return
+        return None
     marker = cfg["model_approval_marker"]
     if not any(line.strip().startswith(marker) for line in str(ti.get("prompt", "")).splitlines()):
-        C.deny(f"check-tree: model {model!r} is on the expensive list. Use the default model, or add a line "
-               f"`{marker} <who> <date> <reason>` to the prompt.")
+        return (f"check-tree: model {model!r} is on the expensive list. Use the default model, or add a line "
+                f"`{marker} <who> <date> <reason>` to the prompt.")
+    return None
+
+
+def main(data: dict) -> None:
+    reason = decide(data)
+    if reason:
+        C.deny(reason)
 
 
 if __name__ == "__main__":

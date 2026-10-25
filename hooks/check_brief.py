@@ -8,6 +8,8 @@ time budget (the owner cuts, reshapes or extends it). A dispatch with no `Check:
 from __future__ import annotations
 
 import _common as C
+import agent_cap
+import model_gate
 from checktree import core
 
 
@@ -61,6 +63,13 @@ def main(data: dict) -> None:
                f"decides: cut it, reshape it, or extend its appetite_hours in the tree (a tree change needs "
                f"their approval again).")
         return
+    # The other dispatch guards run in parallel with this hook. Ask them first, so a dispatch they refuse
+    # never leaves a builder worktree behind.
+    for guard in (model_gate, agent_cap):
+        reason = guard.decide(data)
+        if reason:
+            C.deny(reason)
+            return
     worktree, branch = core.make_worktree(root, tree, check_id, cfg)
     core.append_jsonl(core.state_dir(root, program) / "dispatches.jsonl",
                       {"at": core.now(), "check": check_id, "worktree": str(worktree), "branch": branch,

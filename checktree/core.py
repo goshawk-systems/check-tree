@@ -548,6 +548,46 @@ def make_worktree(root: pathlib.Path, tree: Tree, check_id: str, cfg: dict) -> t
     return path, branch
 
 
+def clean_worktrees(root: pathlib.Path, program: str, older_than_hours: float = 24) -> list[str]:
+    """Remove a program's builder worktrees that hold no work of their own: landed, or never committed to and
+    older than `older_than_hours`. A worktree with commits not on the integration branch is never removed."""
+    cfg = load_config(root)
+    tree = load_tree(root, program, binding_ref(root, cfg)) or load_tree(root, program)
+    integ = tree.integration_branch if tree else f"check-tree/{program}"
+    report: list[str] = []
+    base = root / WORKTREES_DIR
+    if not base.is_dir():
+        return report
+    for wt in sorted(base.glob(f"{program}__*")):
+        code, branch = git(wt, "rev-parse", "--abbrev-ref", "HEAD")
+        if code != 0:
+            git(root, "worktree", "prune")
+            shutil.rmtree(wt, ignore_errors=True)
+            report.append(f"removed {wt.name} (not a working worktree)")
+            continue
+        _, dirty = git(wt, "status", "--porcelain")
+        ahead = "0"
+        if head_of(root, integ):
+            ahead = git(root, "rev-list", "--count", f"{integ}..{branch}")[1].strip() or "0"
+        landed = any(r.get("worktree") == str(wt) and r.get("status") == "pass" and head_of(root, integ)
+                     and git(root, "merge-base", "--is-ancestor", r.get("commit", ""), integ)[0] == 0
+                     for r in read_jsonl(root / STATE_DIR / program / "builder-runs.jsonl"))
+        age_h = (time.time() - wt.stat().st_mtime) / 3600
+        if dirty.strip():
+            report.append(f"kept {wt.name}: uncommitted work")
+            continue
+        if ahead != "0":
+            report.append(f"kept {wt.name}: {ahead} commit(s) not yet landed on {integ}")
+            continue
+        if not landed and age_h < older_than_hours:
+            report.append(f"kept {wt.name}: no commits yet, started {age_h:.1f}h ago (under {older_than_hours:g}h)")
+            continue
+        git(root, "worktree", "remove", "--force", str(wt))
+        git(root, "branch", "-D", branch)
+        report.append(f"removed {wt.name} ({'landed' if landed else 'abandoned with no work'})")
+    return report
+
+
 def owner_of(root: pathlib.Path, rel_path: str, trees: list[Tree]) -> Optional[Tree]:
     rel = rel_path.lstrip("./")
     for t in trees:

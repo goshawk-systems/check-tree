@@ -63,6 +63,7 @@ happens to sit in. A session opened in a checkout a day behind still reads today
 | `start <program>` | The lead's opening page, in place of a handoff: the job, the score, ready checks with the plan's words, what only the owner can do, branches waiting to land. |
 | `brief <program> <check>` | The brief a builder gets for one check. |
 | `land <program> <check>` | Merges the latest passing builder branch for that check into the integration branch (fast-forward after bringing the builder up to date). |
+| `clean <program> [--hours N]` | Removes builder worktrees that were landed, or that never got a commit and are older than N hours (default 24). A worktree with uncommitted or unlanded work is always kept. |
 | `progress <program> "<line>"` | Adds a line to the program's progress log. |
 | `list` | Every program and its pass count. |
 
@@ -73,7 +74,8 @@ Local state (results, dispatches, progress, history) lives in `.check-tree/state
 
 1. **Dispatch** (`check_brief.py`, PreToolUse on Agent/Task). The prompt names `Check: <program>/<id>`. The hook
    fetches, reads the binding tree, and refuses if it is invalid, unapproved, the check is unknown, already
-   passing, not ready, or over its appetite. Otherwise it creates the integration branch if needed, makes the
+   passing, not ready, or over its appetite. It also asks the cost and cap guards first (hooks run in
+   parallel), so a dispatch they refuse never leaves a worktree behind. Otherwise it creates the integration branch if needed, makes the
    builder a worktree on a fresh branch from it, and appends the brief (with a `Worktree:` line) to the prompt.
 2. **Editing** (`check_scope.py`, PreToolUse on Edit/Write). A file in an approved program's `areas` may be
    edited only inside a worktree belonging to that program.

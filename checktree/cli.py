@@ -9,6 +9,7 @@
     check-tree start <program>                     a lead's opening page, in place of a handoff
     check-tree brief <program> <check>             the brief a builder gets for one check
     check-tree land <program> <check>              merge a builder's passing branch into the integration branch
+    check-tree clean <program> [--hours N]         remove builder worktrees that hold no unlanded work
     check-tree progress <program> "<line>"         add one line to the program's progress log
     check-tree list                                every program and its pass count
 """
@@ -220,6 +221,12 @@ def cmd_land(a) -> int:
     return 0
 
 
+def cmd_clean(a) -> int:
+    for line in core.clean_worktrees(_root(), a.program, a.hours):
+        print(line)
+    return 0
+
+
 def cmd_progress(a) -> int:
     core.progress(_root(), a.program, a.line)
     return 0
@@ -253,6 +260,9 @@ def main(argv=None) -> int:
         sp = sub.add_parser(name)
         sp.add_argument("program")
         sp.add_argument("check")
+    sp = sub.add_parser("clean")
+    sp.add_argument("program")
+    sp.add_argument("--hours", type=float, default=24)
     sp = sub.add_parser("progress")
     sp.add_argument("program")
     sp.add_argument("line")

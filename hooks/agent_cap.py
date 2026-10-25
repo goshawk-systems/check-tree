@@ -21,6 +21,27 @@ def load(path) -> dict:
         return {}
 
 
+def live_agents(data: dict) -> dict:
+    root = C.root_for(data)
+    cfg = C.guard_config(root)
+    max_age = float(cfg["agent_max_age_hours"]) * 3600
+    now = time.time()
+    return {k: v for k, v in load(C.state_file(root, "live-agents.json")).get(data.get("session_id", "?"), {}).items()
+            if now - v < max_age}
+
+
+def decide(data: dict) -> "str | None":
+    """The refusal reason for a dispatch over the cap, or None. Also called by check_brief."""
+    if data.get("tool_name") not in C.AGENT_TOOLS:
+        return None
+    cfg = C.guard_config(C.root_for(data))
+    n = len(live_agents(data))
+    if n >= int(cfg["agent_cap"]):
+        return (f"check-tree: this session already runs {n} agents (cap {cfg['agent_cap']}). "
+                "Wait for one to return, or raise `guards.agent_cap` in .check-tree/config.json.")
+    return None
+
+
 def main(data: dict) -> None:
     root = C.root_for(data)
     cfg = C.guard_config(root)
@@ -36,9 +57,9 @@ def main(data: dict) -> None:
     elif event == "SubagentStop" and data.get("agent_id"):
         agents.pop(data["agent_id"], None)
     elif event == "PreToolUse" and data.get("tool_name") in C.AGENT_TOOLS:
-        if len(agents) >= int(cfg["agent_cap"]):
-            C.deny(f"check-tree: this session already runs {len(agents)} agents (cap {cfg['agent_cap']}). "
-                   "Wait for one to return, or raise `guards.agent_cap` in .check-tree/config.json.")
+        reason = decide(data)
+        if reason:
+            C.deny(reason)
     live[session] = agents
     path.write_text(json.dumps(live))
 

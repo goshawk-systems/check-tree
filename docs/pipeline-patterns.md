@@ -1,8 +1,9 @@
 # Pipeline patterns
 
 "Done is a passing check" is only as trustworthy as the pipeline that runs the tests. These are the changes that
-made ours trustworthy and cheaper, with the problem each one answered. They are patterns, not a drop-in
-workflow: every CI setup is different.
+made ours trustworthy and cheaper, with the problem each one answered. Patterns 2, 5 and 6 come with
+ready-to-use scripts in `pipeline/`, and `pipeline/example-workflow.yml` wires them, with pattern 3, into
+GitHub Actions. Adapt them: every CI setup is different.
 
 ## 1. The pipeline owns the tests
 
