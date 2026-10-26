@@ -35,7 +35,7 @@
 | `counts_on` | Where passes count. Default: `base_ref` from the config, usually `main`. |
 | `kind` | `objective` (exactly one; measured where the outcome is used), `component`, or `harness` (the test or tool a component check needs, usually "the defining test exists and fails on today's code"). |
 | `run` | A shell command run from the repository root; exit 0 means pass. It gets `CHECK_TREE_PROGRAM`, `CHECK_TREE_PROGRAM_DIR`, `CHECK_TREE_ROOT` and `CHECK_TREE_BIN` (the command line, for `red-at`). To run a harness command by hand, set it first:
-`export CHECK_TREE_BIN=<path to bin/check-tree>`. A check inherits only a short list of harmless variables (paths, language, temporary folder, `LC_*`); nothing else from the environment. A project that needs more lists them in `check_env_allow` in the config. |
+`export CHECK_TREE_BIN=<path to bin/check-tree>`. A check inherits only a short list of harmless variables (paths, language, temporary folder); nothing else from the environment. A project that needs more lists them in `check_env_allow` in the config. |
 | `fails_when` | What a failure means, in plain words. Required. |
 | `uses_stand_ins` | True when a check runs against fakes or test doubles; it then needs `proven_with`. |
 | `proven_with` | Required on the objective check, and on any check with `uses_stand_ins`: what it is measured against, in plain words ("the real checkout page in staging", "a fake card processor in tests"). Shown to the owner. |
