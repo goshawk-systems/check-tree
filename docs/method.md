@@ -47,7 +47,10 @@ and instruction files stay short. This method puts those together.
    When the code a test needs does not exist yet, an import error would be rejected as "could not run". Make the
    test fail on purpose instead, with a marker the harness can pin, for example in Python
    `assert hasattr(invoices, "pay_invoice"), "MISSING: invoices.pay_invoice"`, and then
-   `red-at <commit> --expect "MISSING|AssertionError" -- <test command>`. If the place a user meets the outcome does not exist yet (no web page, no email service), ask
+   `red-at <commit> --expect "AssertionError: MISSING" -- <test command>`.
+   Pin the error as it is raised (exception name and message), never a word alone or an alternative like
+   `"MISSING|AssertionError"`: those match any failure, and a pin that matches any failure proves nothing.
+   `red-at` ignores lines that only echo the test's source and prints the line it matched, so check that line. If the place a user meets the outcome does not exist yet (no web page, no email service), ask
    the owner what the objective will be measured against for now, and write it in the check's `proven_with`
    (for example "a fake card processor in tests"). The owner sees it before approving.
 6. **The planner drafts the check tree** from the validated plan (`check-planner`). Every check carries the plan

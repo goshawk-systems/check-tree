@@ -33,7 +33,11 @@ requirements the owner did not state; if the objective is ambiguous, write the a
    `frozen`. A different agent writes it than the one who will make it pass.
    Title a harness check by what is true when it passes, which stays true after the work: "The tests that
    define <step> exist and failed before the work started". Pin the reason with `--expect` where you can.
-   The objective check carries `proven_with`: what it is measured against, in plain words. Steps the owner
+   The objective check carries `proven_with`: what it is measured against, in plain words. So does every
+   other check that uses stand-ins (fakes, test mailboxes, sample data): set `"uses_stand_ins": true` and say
+   what stands in for what. Freeze shared test fixtures (for example `conftest.py`, `tests/support/`) along
+   with the tests that use them, so a builder cannot change what the tests run against.
+   Set `independence` in plain words: who wrote the tests, who drafted the checks, who evaluated them. Steps the owner
    dropped go in `dropped`. If several checks change the same files, chain them with `needs`.
 3. **Every check can fail.** A command that cannot fail (`true`, `echo ...`) is not a check. If you cannot state
    `fails_when` concretely, the check is not ready.

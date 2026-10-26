@@ -39,7 +39,7 @@ For a program manager: you will run it for them. They make decisions; you do the
    `claude plugin install check-tree@check-tree`
    Then restart Claude Code so the hooks load.
 3. After the restart, the session-start message names the command line's full path (inside the plugin
-   folder). Use that path, or put its folder on their PATH. If you do not see that note (for example right after installing, before a restart), find it with `ls "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/check-tree/check-tree/*/bin/check-tree`.
+   folder). Use that path, or put its folder on their PATH. If you do not see that note (for example right after installing, before a restart), find it with `CT=$(ls "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/check-tree/check-tree/*/bin/check-tree | tail -1)` (then use `"$CT"`; set `CLAUDE_CONFIG_DIR` first if Claude Code uses a custom config folder).
 4. Offer the one-minute demo so they see it work: `bash <plugin folder>/examples/quickstart.sh`.
 5. Optional, recommended: copy `templates/CLAUDE.md` ideas into their CLAUDE.md (keep it under 200 lines) and
    `templates/config.json` to `.check-tree/config.json`; set the agent cap and expensive models to their taste.

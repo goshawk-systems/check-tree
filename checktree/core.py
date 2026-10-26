@@ -253,6 +253,8 @@ def validate(tree: Tree, root: pathlib.Path, ref: Optional[str] = None) -> list[
         if "<TESTS-COMMIT>" in run:
             p.append(f"{cid}: replace <TESTS-COMMIT> with the commit that added the defining tests "
                      f"(commit the tests first: docs/method.md, 'Order of commits')")
+        if c.get("uses_stand_ins") and not str(c.get("proven_with", "")).strip():
+            p.append(f"{cid}: uses stand-ins (fakes, test mailboxes) but has no `proven_with` saying so")
         if c.get("kind") == "objective" and not str(c.get("proven_with", "")).strip():
             p.append(f"{cid}: no `proven_with`: say in plain words what the objective is measured against "
                      f"(e.g. 'the real checkout page in staging', 'a fake card processor in tests'); the owner "
@@ -408,6 +410,8 @@ NOT_A_REAL_FAILURE = re.compile(
     r"can't open file|unrecognized arguments|invalid option|illegal option|^usage:|\busage: |"
     r"No module named|not recognized as|Permission denied", re.M)
 PKG_ROOT = pathlib.Path(__file__).resolve().parent.parent
+# Lines that echo test source rather than report an error: pytest's "> " marker and indented code lines.
+SOURCE_ECHO = re.compile(r"^(>\s|\s{4,}\S|\s*\d+\s*[|│])")
 
 
 def red_at(root: pathlib.Path, commit: str, cmd: str, timeout: int = 1800,
@@ -439,11 +443,23 @@ def red_at(root: pathlib.Path, commit: str, cmd: str, timeout: int = 1800,
     if bad:
         return False, (f"the test fails at {sha[:10]} only because it cannot run ({bad.group(0)}); "
                        f"a defining test must fail on a missing behaviour, not a missing file:\n" + tail(output, 15))
-    if expect and not re.search(expect, output):
-        return False, (f"the test fails at {sha[:10]}, but not with the expected reason ({expect!r}):\n"
-                       + tail(output, 15))
-    reason = f" with {expect!r}" if expect else " (reason not pinned: add --expect to pin it)"
-    return True, f"fails at {sha[:10]}{reason}:\n" + tail(output, 8)
+    matched = None
+    if expect:
+        rx = re.compile(expect)
+        # Test runners echo the failing source line (pytest prints it after ">" or indented). A pin that only
+        # matches that echo would pass for a test that fails for any reason, so echoed source never counts.
+        for line in output.splitlines():
+            if SOURCE_ECHO.match(line):
+                continue
+            if rx.search(line):
+                matched = line.strip()
+                break
+        if matched is None:
+            return False, (f"the test fails at {sha[:10]}, but no error line matches {expect!r} (lines that only "
+                           f"echo the test's source do not count):\n" + tail(output, 15))
+    if matched:
+        return True, f"fails at {sha[:10]} on the expected error: {matched}"
+    return True, f"fails at {sha[:10]} (reason not pinned: add --expect to pin it):\n" + tail(output, 8)
 
 
 def order(tree: Tree) -> list[dict]:

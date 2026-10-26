@@ -191,7 +191,7 @@ def test_red_at_can_pin_the_reason(repo):
     ok, why = core.red_at(repo, first, cmd, expect=r"assert -1 == 5")
     assert ok, why
     ok, why = core.red_at(repo, first, cmd, expect=r"ConnectionError")
-    assert not ok and "not with the expected reason" in why
+    assert not ok and "no error line matches" in why
 
 
 def test_areas_must_own_real_files_and_the_objective_must_be_real(repo):
@@ -225,10 +225,34 @@ def test_red_at_command_line_reads_expect_before_the_separator(repo):
     ok = cli(repo, "red-at", first, "--expect", "assert -1 == 5", "--", *test)
     assert ok.returncode == 0, ok.stdout + ok.stderr
     wrong = cli(repo, "red-at", first, "--expect", "ConnectionError", "--", *test)
-    assert wrong.returncode == 1 and "not with the expected reason" in wrong.stdout
+    assert wrong.returncode == 1 and "no error line matches" in wrong.stdout
 
 
 def test_a_shell_usage_error_is_never_a_real_failure(repo):
     first = sh(repo, "git", "rev-list", "--max-parents=0", "HEAD").stdout.strip()
     ok, why = core.red_at(repo, first, "--expect MISSING -- python3 -c 'pass'")
     assert not ok and "cannot run" in why, why
+
+
+def test_a_pin_that_only_matches_echoed_source_does_not_count(tmp_path):
+    r = tmp_path / "pin"
+    (r / "tests").mkdir(parents=True)
+    # The test passes its MISSING guard and then fails on a wrong value. pytest echoes the source, which
+    # contains the word MISSING; a pin on that echo must not pass.
+    (r / "tests" / "test_x.py").write_text(
+        "def test_x():\n    assert True, \"MISSING: thing\"\n    assert 1 + 1 == 3\n")
+    sh(r, "git", "init", "-q", "-b", "main")
+    sh(r, "git", "add", "tests/test_x.py")
+    sh(r, "git", "commit", "-q", "-m", "t")
+    cmd = "python3 -m pytest -q -p no:cacheprovider tests/test_x.py"
+    ok, why = core.red_at(r, "HEAD", cmd, expect="MISSING")
+    assert not ok, why
+    ok, why = core.red_at(r, "HEAD", cmd, expect="AssertionError: MISSING")
+    assert not ok, why
+    ok, why = core.red_at(r, "HEAD", cmd, expect=r"assert \(1 \+ 1\) == 3")
+    assert ok and "assert (1 + 1) == 3" in why, why
+
+
+def test_the_owner_sheet_says_how_it_was_put_together(approved):
+    sheet = cli(approved, "table", "demo", "--owner").stdout
+    assert "How this was put together: not stated" in sheet

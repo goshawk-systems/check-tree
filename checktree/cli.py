@@ -117,7 +117,10 @@ def cmd_validate(a) -> int:
 
 def owner_sheet(tree: core.Tree) -> str:
     """The approval sheet in plain words: no ids, kinds, paths or hashes."""
+    checked = tree.data.get("independence") or ("not stated: ask who wrote the tests and who checked them "
+                                                    "before you approve")
     out = [f"# Approval: {tree.program}", "", f"Your objective: \"{tree.objective}\"", "",
+           f"How this was put together: {checked}", "",
            "Read each line and answer yes, no, or change it, in your own words.", ""]
     n = 0
     for c in core.order(tree):

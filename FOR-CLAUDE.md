@@ -41,7 +41,7 @@ Use the plugin's `start-here` skill if it is installed (`/check-tree:start-here`
    ```
    Restart Claude Code so the hooks load.
    After the restart, the session-start message names the command line's full path inside the plugin folder.
-   If you do not see that note (for example right after installing, before a restart), find it with `ls "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/check-tree/check-tree/*/bin/check-tree`.
+   If you do not see that note (for example right after installing, before a restart), find it with `CT=$(ls "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/check-tree/check-tree/*/bin/check-tree | tail -1)` (then use `"$CT"`; set `CLAUDE_CONFIG_DIR` first if Claude Code uses a custom config folder).
 3. Show the one-minute demo: `bash <plugin folder>/examples/quickstart.sh` (needs only git and Python 3.9+).
 4. Pick one real piece of work. Run `/check-tree:define` with the owner, then `/check-tree:lead` to build.
 

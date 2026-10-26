@@ -31,13 +31,14 @@ Bring the owner: what holds, what should change, the order, each with its source
 Never ask them to assess a plan you have not validated.
 
 ## 4. The tree
-The session-start message tells you where the `check-tree` command line is installed; use that full path. If you do not see that note (for example right after installing, before a restart), find it with `ls "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/check-tree/check-tree/*/bin/check-tree`. The docs and templates named here are in that plugin folder.
+The session-start message tells you where the `check-tree` command line is installed; use that full path. If you do not see that note (for example right after installing, before a restart), find it with `CT=$(ls "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/check-tree/check-tree/*/bin/check-tree | tail -1)` (then use `"$CT"`; set `CLAUDE_CONFIG_DIR` first if Claude Code uses a custom config folder). The docs and templates named here are in that plugin folder.
 Follow "Order of commits" in `docs/method.md`.
 - Run `check-tree init <program>` if no tree exists. Commit the validation file and `.check-tree/config.json`.
 - Set `areas` to the product folders this program changes (for example `src/invoices/**`), not the tests and not
   the whole repo. Builders change those files; everyone else is kept out of them.
 - If the place a user meets the outcome does not exist yet (no page, no email service), ask the owner what the
-  objective will be measured against for now. That goes in the objective check's `proven_with`.
+  objective will be measured against for now. That goes in the objective check's `proven_with`, and in the
+  `proven_with` of every other check that uses the same stand-ins.
 - For every step whose defining test does not exist, a different agent writes that test first. Commit the tests;
   that commit replaces `<TESTS-COMMIT>` in the harness checks (`check-tree red-at <commit> -- <test command>`).
 - Dispatch the `check-tree:check-planner` agent with the program name, the objective (verbatim), the validation
@@ -46,8 +47,10 @@ Follow "Order of commits" in `docs/method.md`.
   findings are questions only the owner can answer. (If you cannot dispatch agents, say plainly that the
   evaluation was not independent.)
 - `check-tree validate <program>` must print `valid`.
-- If one session has to play several roles (test author, planner, evaluator), tell the owner plainly and write
-  it in the validation file. Independence is what catches the mistakes; when you can, run the evaluator as a
+- The defining tests decide the product's shape (function names, inputs, what a screen or email contains).
+  Tell the owner, or the lead, in plain words what the tests commit the product to, before approval.
+- If one session has to play several roles (test author, planner, evaluator), tell the owner plainly, write it
+  in the validation file, and set the tree's `independence` so it shows at the top of the approval sheet. Independence is what catches the mistakes; when you can, run the evaluator as a
   separate agent or a separate session.
 
 ## 5. Approval

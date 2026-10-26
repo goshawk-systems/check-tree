@@ -34,9 +34,12 @@
 | `integration_branch` | Where builders' work collects. Default `check-tree/<program>`. |
 | `counts_on` | Where passes count. Default: `base_ref` from the config, usually `main`. |
 | `kind` | `objective` (exactly one; measured where the outcome is used), `component`, or `harness` (the test or tool a component check needs, usually "the defining test exists and fails on today's code"). |
-| `run` | A shell command run from the repository root; exit 0 means pass. It gets `CHECK_TREE_PROGRAM`, `CHECK_TREE_PROGRAM_DIR`, `CHECK_TREE_ROOT` and `CHECK_TREE_BIN` (the command line, for `red-at`). Variables that look like credentials (cloud keys, tokens, passwords, database URLs) are removed. |
+| `run` | A shell command run from the repository root; exit 0 means pass. It gets `CHECK_TREE_PROGRAM`, `CHECK_TREE_PROGRAM_DIR`, `CHECK_TREE_ROOT` and `CHECK_TREE_BIN` (the command line, for `red-at`). To run a harness command by hand, set it first:
+`export CHECK_TREE_BIN=<path to bin/check-tree>`. Variables that look like credentials (cloud keys, tokens, passwords, database URLs) are removed. |
 | `fails_when` | What a failure means, in plain words. Required. |
-| `proven_with` | Required on the objective check: what it is measured against, in plain words ("the real checkout page in staging", "a fake card processor in tests"). Shown to the owner. |
+| `independence` | Who wrote the defining tests, who drafted the checks and who evaluated them, in plain words. Shown at the top of the owner's sheet ("not stated" if missing). |
+| `uses_stand_ins` | True when a check runs against fakes or test doubles; it then needs `proven_with`. |
+| `proven_with` | Required on the objective check, and on any check with `uses_stand_ins`: what it is measured against, in plain words ("the real checkout page in staging", "a fake card processor in tests"). Shown to the owner. |
 | `needs` | Check ids that must pass first. A check whose needs fail is `blocked`, not run. |
 | `frozen` | Files that define the check. The approval pins their contents. |
 | `appetite_hours` | The time the owner bets on this check. After that many hours since its first dispatch, the dispatch hook refuses it until the owner cuts, reshapes or extends it. |

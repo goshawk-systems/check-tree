@@ -20,5 +20,8 @@ One row per open plan step. Every cell that states a fact names its source.
 ## Proposed order
 1. ...
 
+## What the tests commit the product to
+Function names, inputs and outputs, what an email or screen contains: in plain words, for the owner or lead.
+
 ## Questions only the owner can answer
 - ...
