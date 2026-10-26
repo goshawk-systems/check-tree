@@ -58,17 +58,17 @@ Each hook allows the action if it crashes, and says why on stderr: a guard bug m
 ## Install
 
 ```bash
-claude plugin marketplace add Sarah-in-dev/check-tree
+claude plugin marketplace add goshawk-systems/check-tree
 claude plugin install check-tree@check-tree
 ```
 
-Or inside Claude Code: `/plugin marketplace add Sarah-in-dev/check-tree`, then `/plugin install check-tree@check-tree`.
+Or inside Claude Code: `/plugin marketplace add goshawk-systems/check-tree`, then `/plugin install check-tree@check-tree`.
 
 The command line has no dependencies. Run it from the plugin folder, or clone the repo and put `bin/` on your
 `PATH`:
 
 ```bash
-git clone https://github.com/Sarah-in-dev/check-tree && export PATH="$PWD/check-tree/bin:$PATH"
+git clone https://github.com/goshawk-systems/check-tree && export PATH="$PWD/check-tree/bin:$PATH"
 ```
 
 ## Quickstart

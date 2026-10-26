@@ -1,8 +1,14 @@
 {
   "name": "check-tree",
   "description": "check-tree: plans as pass/fail checks for teams of AI coding agents.",
-  "owner": { "name": "Sarah Todd Davidson" },
+  "owner": {
+    "name": "Goshawk Systems"
+  },
   "plugins": [
-    { "name": "check-tree", "source": "./", "description": "The execution loop (check trees, builder briefs, stop and scope hooks), planner and evaluator agents, and guardrail hooks." }
+    {
+      "name": "check-tree",
+      "source": "./",
+      "description": "The execution loop (check trees, builder briefs, stop and scope hooks), planner and evaluator agents, and guardrail hooks."
+    }
   ]
 }
