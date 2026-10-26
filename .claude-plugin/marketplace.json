@@ -8,7 +8,7 @@
     {
       "name": "check-tree",
       "source": "./",
-      "description": "The execution loop (check trees, builder briefs, stop and scope hooks), planner and evaluator agents, and guardrail hooks."
+      "description": "Stops AI coding agents from spinning and from saying 'done' when it isn't. Your plan becomes pass/fail checks you approve; each agent gets one check and can't finish until it passes. For developers and program managers."
     }
   ]
 }

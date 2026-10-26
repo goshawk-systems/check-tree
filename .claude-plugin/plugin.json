@@ -1,7 +1,7 @@
 {
   "name": "check-tree",
   "version": "0.1.0",
-  "description": "Plans as pass/fail checks for teams of AI coding agents: a builder gets one check and cannot finish while it fails, plus guardrails that held under real use.",
+  "description": "Stops AI coding agents from spinning and from saying 'done' when it isn't. Your plan becomes pass/fail checks you approve; each agent gets one check and can't finish until it passes. For developers and program managers.",
   "author": {
     "name": "Sarah Todd Davidson",
     "url": "https://www.sarah-in-dev.com"
@@ -11,13 +11,17 @@
   "license": "MIT",
   "keywords": [
     "agents",
-    "hooks",
+    "subagents",
+    "multi-agent",
     "planning",
+    "project-management",
+    "definition-of-done",
     "testing",
-    "guardrails",
-    "multi-agent"
+    "hooks",
+    "guardrails"
   ],
   "icon": "./icon.png",
   "documentationUrl": "https://github.com/goshawk-systems/check-tree/blob/main/docs/method.md",
-  "supportUrl": "https://github.com/goshawk-systems/check-tree/issues"
+  "supportUrl": "https://github.com/goshawk-systems/check-tree/issues",
+  "privacyPolicyUrl": "https://github.com/goshawk-systems/check-tree#what-data-it-sends"
 }
