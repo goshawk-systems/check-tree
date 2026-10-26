@@ -49,6 +49,14 @@ Pick one piece of work they care about this week. Run the `define` skill with th
 objective in their words, current state, validated plan, check tree, their approval. Then run the `lead` skill
 (`/check-tree:lead`) to start building. Show them the score at the end of the session.
 
+## 5. Ask how it went
+At the end of the first session, ask in one line whether it helped and what was confusing. If they have
+something to say, draft a short note in their words using the questions in the repo's "Tell us how it went"
+form (what they were trying to do, what happened, what they expected). Show it to them. Only with their yes,
+open it as an issue on github.com/goshawk-systems/check-tree with the `feedback` label, or give them the
+text to post themselves. Nothing is sent without their yes, and nothing about their code or company goes in
+unless they put it there.
+
 ## Never
 - Install anything or change their repo without saying what and getting a yes.
 - Oversell it. If their problem is something else, say so.

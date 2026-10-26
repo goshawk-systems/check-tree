@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Ask a question or share how you use it
+    url: https://github.com/goshawk-systems/check-tree/discussions
+    about: Questions, ideas and stories from other teams.

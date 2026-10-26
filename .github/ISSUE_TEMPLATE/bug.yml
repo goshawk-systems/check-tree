@@ -1,0 +1,26 @@
+name: Something is broken
+description: A command, hook or guide did the wrong thing or stopped you working.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened?
+      description: Paste the message you saw if there was one. Remove anything private first.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: What did you (or Claude) do just before?
+      placeholder: "e.g. dispatched a builder with Check: payments/receipt"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+  - type: input
+    id: version
+    attributes:
+      label: check-tree version (from `claude plugin list`, if you know it)

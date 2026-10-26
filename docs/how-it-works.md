@@ -68,6 +68,7 @@ happens to sit in. A session opened in a checkout a day behind still reads today
 | `start <program>` | The lead's opening page, in place of a handoff: the job, the score, ready checks with the plan's words, what only the owner can do, branches waiting to land. |
 | `brief <program> <check>` | The brief a builder gets for one check. |
 | `land <program> <check>` | Merges the latest passing builder branch for that check into the integration branch (fast-forward after bringing the builder up to date). |
+| `card <program> [--days 7]` | A short summary to share: passing count now and N days ago, whether the goal is reached, what newly passes. No internals. |
 | `clean <program> [--hours N]` | Removes builder worktrees that were landed, or that never got a commit and are older than N hours (default 24). A worktree with uncommitted or unlanded work is always kept. |
 | `progress <program> "<line>"` | Adds a line to the program's progress log. |
 | `list` | Every program and its pass count. |

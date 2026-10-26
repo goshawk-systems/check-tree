@@ -577,6 +577,47 @@ def render_score(s: Score, tree: Tree) -> str:
     return "\n".join(lines)
 
 
+def card(root: pathlib.Path, program: str, days: int = 7) -> str:
+    """A short, postable summary of a program's progress: score now, score `days` ago, what turned green.
+    Plain text with no internals, so a person can share it as is."""
+    s = score(root, program)
+    cfg = load_config(root)
+    tree = load_tree(root, program, binding_ref(root, cfg)) or load_tree(root, program)
+    cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)
+    before = None
+    for row in read_jsonl(root / STATE_DIR / program / "history.jsonl"):
+        try:
+            at = dt.datetime.fromisoformat(row.get("at", ""))
+        except ValueError:
+            continue
+        if at <= cutoff:
+            before = row.get("passing")
+    titles = {c["id"]: c.get("title", c["id"]) for c in tree.checks}
+    first_pass: dict[str, str] = {}
+    for row in read_jsonl(root / STATE_DIR / program / "results.jsonl"):
+        if row.get("status") == "pass" and "check" in row:
+            first_pass.setdefault(row["check"], row.get("at", ""))
+    newly = []
+    for cid, at in first_pass.items():
+        try:
+            recent = dt.datetime.fromisoformat(at) > cutoff
+        except ValueError:
+            recent = False
+        if cid in titles and s.status.get(cid) == "pass" and recent:
+            newly.append(titles[cid])
+    if before is not None and before != s.passing:
+        head = f"{program}: {before} -> {s.passing} of {s.total} checks passing in the last {days} days"
+    else:
+        head = f"{program}: {s.passing} of {s.total} checks passing"
+    lines = [head, f"Goal: {tree.objective}", "Goal reached." if s.objective_passes else "Goal not reached yet."]
+    if newly:
+        lines.append("Newly passing:")
+        lines += [f"- {t}" for t in newly[:6]]
+    lines.append("Done is computed by running the checks, not declared. "
+                 "(check-tree: github.com/goshawk-systems/check-tree)")
+    return "\n".join(lines)
+
+
 # ───────────────────────────── builders: worktrees and briefs ─────────────────────────────
 
 def ensure_integration_branch(root: pathlib.Path, tree: Tree, cfg: dict) -> str:

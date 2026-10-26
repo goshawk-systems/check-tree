@@ -34,6 +34,7 @@ Plain words. Lead with the score and what changed since last time. Bring decisio
 out of time; it is blocked by Y; I suggest reshaping it to Z. Yes?"
 
 ## End of the week
+Show the owner `check-tree card <program>`: a short summary of the week's progress they can share as is.
 Compare the pass count with 7 days ago. If it has not moved, tell the owner plainly and propose rolling this
 program back to the old way of working, with the cause. Run `check-tree clean <program>`.
 

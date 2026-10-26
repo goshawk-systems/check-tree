@@ -149,6 +149,27 @@ Stated, not hidden:
 - **It does not make agents understand your system.** Every step an agent takes still re-reads its context; the
   loop narrows what it needs, not what it costs.
 
+## Share your progress
+
+`check-tree card <program>` prints a short summary you can paste anywhere:
+
+```
+invoice-payments: 2 -> 7 of 9 checks passing in the last 7 days
+Goal: A customer who receives an invoice email can pay it by card and gets a receipt, and the invoice shows as paid.
+Goal not reached yet.
+Newly passing:
+- The pay-link email reaches the customer with a working link
+...
+```
+
+## Questions and feedback
+
+- Something broken: [open a bug report](https://github.com/goshawk-systems/check-tree/issues/new?template=bug.yml).
+- How it went, what confused you, what you wish it did: [tell us](https://github.com/goshawk-systems/check-tree/issues/new?template=feedback.yml). No technical detail needed.
+- Questions and stories from other teams: [Discussions](https://github.com/goshawk-systems/check-tree/discussions).
+
+Every report gets a reply.
+
 ## Also in this repo
 
 - `docs/how-it-works.md`: the tree format and every command, in detail.

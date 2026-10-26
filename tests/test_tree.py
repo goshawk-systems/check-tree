@@ -166,3 +166,20 @@ def test_init_writes_a_full_config_and_a_usable_test_name(tmp_path):
     assert cfg["remote"] is None and "guards" in cfg
     tree = (r / core.tree_path("invoice-payments")).read_text()
     assert "test_invoice_payments.py" in tree and "test_invoice-payments" not in tree
+
+
+def test_the_card_is_shareable_and_shows_progress(approved):
+    import datetime as _dt
+    core.run_checks(approved, "demo")
+    core.score(approved, "demo")  # the scoreboard records history each time it is read
+    hist = approved / ".check-tree" / "state" / "demo" / "history.jsonl"
+    old = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=8)).isoformat(timespec="seconds")
+    hist.write_text(json.dumps({"at": old, "commit": "x", "passing": 0, "total": 2}) + "\n" + hist.read_text())
+    (approved / "src" / "demo" / "__init__.py").write_text("def add(a, b):\n    return a + b\n")
+    sh(approved, "git", "commit", "-q", "-am", "fix add")
+    core.run_checks(approved, "demo")
+    out = cli(approved, "card", "demo").stdout
+    assert "demo: 0 -> 2 of 2 checks passing in the last 7 days" in out, out
+    assert "Goal reached." in out and "- the acceptance test passes" in out
+    for internal in ("h-test", "frozen", "/Users/", ".check-tree"):
+        assert internal not in out, internal

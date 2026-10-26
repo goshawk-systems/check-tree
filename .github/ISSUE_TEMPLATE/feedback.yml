@@ -1,0 +1,40 @@
+name: Tell us how it went
+description: Anything about using check-tree - what worked, what confused you, what you wish it did. No technical detail needed.
+labels: ["feedback"]
+body:
+  - type: dropdown
+    id: role
+    attributes:
+      label: Which describes you best?
+      options:
+        - I write code
+        - I manage the work (program, product or project manager)
+        - Founder or team lead
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: trying
+    attributes:
+      label: What were you trying to get done?
+      placeholder: "e.g. get our invoice payment work to actually finish"
+    validations:
+      required: true
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened?
+      description: Describe what you saw, in your own words. You don't need to know the cause.
+      placeholder: "e.g. the agent still said it was done, but the checks showed 2 of 9"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect, or wish had happened?
+  - type: checkboxes
+    id: followup
+    attributes:
+      label: Follow-up
+      options:
+        - label: It's fine to reply here with questions.
