@@ -10,7 +10,7 @@ evaluator and the owner.
 
     scripted_review.py --body body.md --base origin/main [--section "## What changed"]... [--item-pattern REGEX]
 
-In GitHub Actions, write the body with `gh pr view "$PR" --json body -q .body > body.md`.
+In GitHub Actions, write the body from the pull request event (see example-workflow.yml).
 Exit 1 with one line per problem. Standard library only.
 """
 from __future__ import annotations

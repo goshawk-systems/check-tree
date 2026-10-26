@@ -48,11 +48,11 @@ DEFAULT_CONFIG = {
 # A command that cannot fail is not a check.
 TRIVIAL_RUN = re.compile(r"^\s*(true|:|exit\s+0|echo\b[^|;&]*|/bin/true)\s*$")
 
-# Variables never handed to a check command: credentials a check has no business reading.
-SECRET_ENV = re.compile(
-    r"^(AWS_|AZURE_|GOOGLE_APPLICATION_CREDENTIALS|GCP_|GH_TOKEN$|GITHUB_TOKEN$|ANTHROPIC_API_KEY$|"
-    r"OPENAI_API_KEY$|DATABASE_URL|DB_URL|PG[A-Z]*$)|(_TOKEN|_SECRET|_PASSWORD|_API_KEY)$"
-)
+# The only variables a check command inherits: what a test runner needs to find programs, write temporary
+# files and print text. Nothing else from the user's environment is passed, so a check never sees anything
+# private. A project that needs more names them in .check-tree/config.json under "check_env_allow".
+CHECK_ENV_ALLOW = ("PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LANGUAGE", "TERM", "TMPDIR", "TZ",
+                   "PYTHONPATH", "VIRTUAL_ENV", "CONDA_PREFIX", "NODE_PATH", "JAVA_HOME", "GOPATH")
 
 
 # ───────────────────────────── git and paths ─────────────────────────────
@@ -404,7 +404,9 @@ def progress(root: pathlib.Path, program: str, line: str, **extra) -> None:
 # ───────────────────────────── running checks ─────────────────────────────
 
 def check_env(root: pathlib.Path, program: str, workdir: pathlib.Path) -> dict:
-    env = {k: v for k, v in os.environ.items() if not SECRET_ENV.search(k)}
+    allow = set(CHECK_ENV_ALLOW) | set(load_config(root).get("check_env_allow", []))
+    env = {k: v for k, v in os.environ.items() if k in allow or k.startswith("LC_")}
+    env["PYTHONDONTWRITEBYTECODE"] = "1"  # running a check must not leave cache files that look like work
     env["CHECK_TREE_PROGRAM"] = program
     env["CHECK_TREE_PROGRAM_DIR"] = str(workdir / PROGRAMS_DIR / program)
     env["CHECK_TREE_ROOT"] = str(workdir)

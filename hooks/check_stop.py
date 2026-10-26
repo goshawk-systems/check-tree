@@ -47,6 +47,9 @@ def main(data: dict) -> None:
         C.block_stop(f"check-tree: {reason}")
 
     code, dirty = core.git(worktree, "status", "--porcelain")
+    # Caches that test runners leave behind are not work.
+    dirty = "\n".join(line for line in dirty.splitlines()
+                      if not any(c in line for c in ("__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache")))
     if code == 0 and dirty.strip():
         if state["asked"].count("uncommitted") < 2:
             send_back("you have uncommitted work in your worktree. Commit everything, then stop again:\n"

@@ -28,8 +28,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
-      - run: gh pr view "${{ github.event.pull_request.number }}" --json body -q .body > body.md
-        env: { GH_TOKEN: "${{ github.token }}" }
+      - run: printf '%s' "$PR_BODY" > body.md
+        env: { PR_BODY: "${{ github.event.pull_request.body }}" }
       - run: python3 pipeline/scripted_review.py --body body.md --base "origin/${{ github.base_ref }}"
 
   impacted-tests:

@@ -89,13 +89,15 @@ def test_a_blocked_check_is_not_run(approved):
     assert results == {"h-test": "fail", "obj": "blocked"}
 
 
-def test_check_commands_do_not_see_credentials(approved, monkeypatch):
-    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "x")
-    monkeypatch.setenv("GITHUB_TOKEN", "x")
-    monkeypatch.setenv("MY_SERVICE_PASSWORD", "x")
+def test_check_commands_inherit_only_the_allowed_variables(approved, monkeypatch):
+    monkeypatch.setenv("SOMETHING_PRIVATE", "x")
+    monkeypatch.setenv("ANY_OTHER_SETTING", "x")
     env = core.check_env(approved, "demo", approved)
-    assert not {"AWS_SECRET_ACCESS_KEY", "GITHUB_TOKEN", "MY_SERVICE_PASSWORD"} & set(env)
-    assert env["CHECK_TREE_PROGRAM"] == "demo"
+    assert "SOMETHING_PRIVATE" not in env and "ANY_OTHER_SETTING" not in env
+    assert "PATH" in env and env["CHECK_TREE_PROGRAM"] == "demo"
+    (approved / ".check-tree" / "config.json").write_text(
+        '{"base_ref": "main", "remote": null, "check_env_allow": ["ANY_OTHER_SETTING"]}')
+    assert "ANY_OTHER_SETTING" in core.check_env(approved, "demo", approved)
 
 
 def test_tree_constant_is_the_fixture():
