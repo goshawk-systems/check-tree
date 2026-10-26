@@ -145,6 +145,19 @@ passing, `check-tree land payments <id>` merges its branch into the program's in
 `templates/CLAUDE.md` is a starting instructions file in which every rule names what enforces it, and
 `templates/test_claude_md_size.py` keeps it under 200 lines and shrink-only.
 
+## What data it sends
+
+None. check-tree has no server and reports nothing back. Everything it does stays in your own repository and
+on your own machine:
+
+- It reads and writes files in your repository: the check tree in `.check-tree/programs/`, local results and
+  progress in `.check-tree/state/` (ignored by git), and builder worktrees in `.check-tree/worktrees/`.
+- It runs `git` against your own repository, including `git fetch` from the remote you already use.
+- It runs the check commands you approved, with credential-like environment variables (cloud keys, tokens,
+  passwords, database URLs) removed.
+- Hooks read the Claude Code session data Claude Code hands them (the tool call, the transcript path) on your
+  machine, and nothing is sent anywhere.
+
 ## What it does not prevent
 
 Stated, not hidden:
