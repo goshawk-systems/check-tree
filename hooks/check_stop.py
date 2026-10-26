@@ -2,12 +2,14 @@
 """SubagentStop: a builder bound to a check cannot finish while its check fails.
 
 When the builder stops, its approved check runs in its own worktree. It is sent back (the reason becomes its
-next instruction) when work is uncommitted, when a frozen file changed, or when the check fails. After
+next instruction) when work is uncommitted, when a frozen file changed, when a product check's builder
+changed files outside the program's areas, or when the check fails. After
 `max_send_backs` failing runs it may return, and the return is logged as failed. A pass is logged with the
 commit, ready for the lead to land on the integration branch.
 """
 from __future__ import annotations
 
+import fnmatch
 import json
 import pathlib
 
@@ -65,6 +67,21 @@ def main(data: dict) -> None:
         core.progress(root, program, f"{check_id}: returned with frozen files changed", check=check_id)
         return
 
+    if check.get("kind") != "harness":
+        allowed = list(tree.areas) + list(check.get("may_change", []))
+        _, names = core.git(worktree, "diff", "--name-only", f"{integ}...HEAD")
+        outside = [f for f in names.splitlines() if f and not any(
+            fnmatch.fnmatch(f, g) or fnmatch.fnmatch(f, g.rstrip("/") + "/*") for g in allowed)]
+        if outside:
+            if state["asked"].count("outside") < 2:
+                send_back(f"you changed files outside this program's files ({', '.join(outside[:8])}). A build "
+                          f"changes only the product ({', '.join(tree.areas)}); tests, fixtures and helpers that "
+                          f"change what the tests run against are the owner's. Undo those changes. If the check "
+                          f"needs one, say so on a `Check wrong:` line.", "outside")
+                return
+            core.progress(root, program, f"{check_id}: returned with changes outside the program's files",
+                          check=check_id)
+            return
     env = core.check_env(root, program, worktree)
     ok, output, secs = core.run_command(check["run"], worktree, env, int(cfg["check_timeout_seconds"]))
     _, sha = core.git(worktree, "rev-parse", "HEAD")

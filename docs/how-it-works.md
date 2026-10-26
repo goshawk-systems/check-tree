@@ -37,7 +37,6 @@
 | `run` | A shell command run from the repository root; exit 0 means pass. It gets `CHECK_TREE_PROGRAM`, `CHECK_TREE_PROGRAM_DIR`, `CHECK_TREE_ROOT` and `CHECK_TREE_BIN` (the command line, for `red-at`). To run a harness command by hand, set it first:
 `export CHECK_TREE_BIN=<path to bin/check-tree>`. Variables that look like credentials (cloud keys, tokens, passwords, database URLs) are removed. |
 | `fails_when` | What a failure means, in plain words. Required. |
-| `independence` | Who wrote the defining tests, who drafted the checks and who evaluated them, in plain words. Shown at the top of the owner's sheet ("not stated" if missing). |
 | `uses_stand_ins` | True when a check runs against fakes or test doubles; it then needs `proven_with`. |
 | `proven_with` | Required on the objective check, and on any check with `uses_stand_ins`: what it is measured against, in plain words ("the real checkout page in staging", "a fake card processor in tests"). Shown to the owner. |
 | `needs` | Check ids that must pass first. A check whose needs fail is `blocked`, not run. |
@@ -46,6 +45,9 @@
 | `plan_text` | The existing plan's own words for this step. It goes into the builder's brief, so the plan is handed over rather than looked up. |
 | `dropped` | Plan steps the owner dropped, with their words. Shown on the approval sheet. |
 | `open_for_the_owner` | Questions only the owner can answer. Shown on the approval sheet. |
+| `independence` | Tree-level. Who wrote the defining tests, who drafted the checks and who evaluated them, in plain words. Shown at the top of the owner's sheet ("not stated" if missing). |
+| `commits_product_to` | Tree-level. A plain-words list of what the tests decide about the product. Shown on the owner's sheet. |
+| `may_change` | Per check. Extra paths, beyond the program's `areas`, that a builder on this check may change. |
 | `validation` | Path of the plan-validation file. Approval requires it (or `--without-validation`, which the scoreboard shows). |
 | `approved` | Written by `check-tree approve`: who, their words, when, the tree's hash and each frozen file's hash. |
 
@@ -66,7 +68,7 @@ happens to sit in. A session opened in a checkout a day behind still reads today
 | `table <program> [--owner]` | The tree with ids and the hash; `--owner` prints the plain-words approval sheet. |
 | `red-at <commit> [--expect RE] -- <command>` | Passes if the command FAILS at that commit and not merely because it could not run (a missing file, import, syntax or usage error). `--expect` pins the reason: the failure output must contain it. The harness check for a defining test: it stays green after the work is done. |
 | `approve <program> --by --words` | Records the approval in the working copy. It binds once committed to the base branch. |
-| `run <program> [--check ID]` | Runs checks in dependency order, in a fresh detached worktree at the head of `counts_on`, and records each result with the commit it ran at. |
+| `run <program> [--check ID]` | Runs checks in dependency order, in a fresh detached worktree at the head of `counts_on`, and records each result with the commit it ran at. A builder's own branch is scored by the stop hook in its worktree; it reaches the scoreboard once landed and merged. Nothing counts while the tree is not approved. |
 | `score <program>` | The scoreboard: results recorded for the current head only; anything else is `not run`. Shows ready checks, over-appetite checks and `STALLED`. |
 | `start <program>` | The lead's opening page, in place of a handoff: the job, the score, ready checks with the plan's words, what only the owner can do, branches waiting to land. |
 | `brief <program> <check>` | The brief a builder gets for one check. |

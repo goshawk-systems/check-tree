@@ -93,7 +93,7 @@ def cmd_init(a) -> int:
         cfg.write_text(json.dumps(config, indent=2) + "\n")
     gi = root / ".gitignore"
     lines = gi.read_text().splitlines() if gi.exists() else []
-    for entry in (".check-tree/state/", ".check-tree/worktrees/"):
+    for entry in (".check-tree/state/", ".check-tree/worktrees/", "__pycache__/"):
         if entry not in lines:
             lines.append(entry)
     gi.write_text("\n".join(lines) + "\n")
@@ -127,12 +127,17 @@ def owner_sheet(tree: core.Tree) -> str:
         n += 1
         label = "Before building" if c.get("kind") == "harness" else "Done means"
         line = f"{n}. {label}: {c.get('title', '')}\n   It fails when: {c.get('fails_when', '')}"
+        if c.get("plan_text"):
+            line += f"\n   From the plan: {c['plan_text']}"
         if c.get("proven_with"):
             line += f"\n   Proven with: {c['proven_with']}"
         h = c.get("appetite_hours")
         line += f"\n   Time budget: {h} hour{'' if h == 1 else 's'} (an estimate: change it if you disagree)" \
                 f"\n   Your answer: ________"
         out.append(line)
+    if tree.data.get("commits_product_to"):
+        out += ["", "What these tests commit the product to (how it will be built):"]
+        out += [f"- {x}" for x in tree.data["commits_product_to"]]
     if tree.data.get("dropped"):
         out += ["", "Dropped from the plan, at your word:"] + [f"- {d}" for d in tree.data["dropped"]]
     if tree.data.get("open_for_the_owner"):

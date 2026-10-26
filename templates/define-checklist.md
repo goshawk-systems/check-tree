@@ -24,6 +24,8 @@ a faster way to build the wrong thing.
 - [ ] Every component whose test does not exist has a harness check: the test exists and fails today.
 - [ ] Defining tests listed in `frozen`; written by a different agent than the one who will make them pass.
 - [ ] Every check has `fails_when`, `appetite_hours` (under a day each), and `plan_text`.
+- [ ] Every computed result is tested with at least two different inputs; each test pinned with `red-at` on its own.
+- [ ] An honest reference version (scratch copy, never committed) passes all the tests.
 - [ ] `check-evaluator` attacked it; every finding fixed or written up as an open question.
 - [ ] `check-tree validate <program>` prints `valid`.
 

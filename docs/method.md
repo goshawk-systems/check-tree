@@ -48,6 +48,12 @@ and instruction files stay short. This method puts those together.
    test fail on purpose instead, with a marker the harness can pin, for example in Python
    `assert hasattr(invoices, "pay_invoice"), "MISSING: invoices.pay_invoice"`, and then
    `red-at <commit> --expect "AssertionError: MISSING" -- <test command>`.
+   Pin each test, not each file: run `red-at` on each test (for pytest, `file.py::test_name`), so one
+   test failing for the right reason cannot cover another failing for the wrong one.
+   Write tests a builder cannot game: check every computed result for at least two different inputs (a
+   hard-coded answer then fails), and assert on the behaviour the user sees, not on internal details.
+   Before approval, show the tests can pass: an honest reference version, written in a scratch copy and
+   never committed, passes them all. A test nothing can pass is as useless as one everything passes.
    Pin the error as it is raised (exception name and message), never a word alone or an alternative like
    `"MISSING|AssertionError"`: those match any failure, and a pin that matches any failure proves nothing.
    `red-at` ignores lines that only echo the test's source and prints the line it matched, so check that line. If the place a user meets the outcome does not exist yet (no web page, no email service), ask
@@ -82,7 +88,11 @@ Checklist: `templates/define-checklist.md`.
 - **One builder per ready check**, dispatched with `Check: <program>/<id>`. If several checks change the same
   files, chain them with `needs` so builders do not collide, or expect to resolve conflicts when landing. The builder gets a short brief
   instead of a reading list, works in its own worktree, and cannot finish while its check fails.
-- **The evaluator on every claimed pass.** It runs the check itself and tries to make the pass false.
+- **The evaluator on every claimed pass.** It runs the check itself and tries to make the pass false: it
+  tries inputs the tests did not use, and looks for hard-coded answers.
+- **A builder on a product check changes only the product.** The stop hook sends it back for any change outside
+  the program's `areas` (plus the check's own `may_change`): a new test helper, fixture or file that changes
+  what the tests run against is the owner's call, not the builder's.
 - **The lead does not write the program's code.** It steers: dispatch, land passing work, rescore.
 - **Every gap becomes a proposed change, back to the owner.** A builder's `Check wrong:` or `Noticed:` line, a
   research result, a surprise: each goes back through define steps 3 to 8. Nothing is quietly worked around.

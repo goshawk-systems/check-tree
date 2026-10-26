@@ -37,7 +37,10 @@ requirements the owner did not state; if the objective is ambiguous, write the a
    other check that uses stand-ins (fakes, test mailboxes, sample data): set `"uses_stand_ins": true` and say
    what stands in for what. Freeze shared test fixtures (for example `conftest.py`, `tests/support/`) along
    with the tests that use them, so a builder cannot change what the tests run against.
-   Set `independence` in plain words: who wrote the tests, who drafted the checks, who evaluated them. Steps the owner
+   Set `independence` in plain words: who wrote the tests, who drafted the checks, who evaluated them.
+   Set `commits_product_to`: a plain-words list of what the tests decide about the product (names, inputs,
+   what an email or screen contains). Each test checks computed results for at least two different inputs,
+   and is pinned on its own (`red-at <commit> --expect "<raised error>" -- <runner> <file>::<test>`). Steps the owner
    dropped go in `dropped`. If several checks change the same files, chain them with `needs`.
 3. **Every check can fail.** A command that cannot fail (`true`, `echo ...`) is not a check. If you cannot state
    `fails_when` concretely, the check is not ready.

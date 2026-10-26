@@ -581,7 +581,8 @@ def score(root: pathlib.Path, program: str, do_fetch: bool = True) -> Score:
     sha = head_of(root, counts_on)
     latest = latest_results(root, program, sha)
     status = {c["id"]: latest.get(c["id"], {}).get("status", "not run") for c in tree.checks}
-    passing = sum(1 for s in status.values() if s == "pass")
+    # Passes count only under an approved tree: a weakened test or a changed tree must not move the score.
+    passing = sum(1 for s in status.values() if s == "pass") if ok else 0
     ready = [c["id"] for c in tree.checks
              if status[c["id"]] != "pass" and all(status.get(n) == "pass" for n in c.get("needs", []))]
     hours = dispatch_hours(root, program)
@@ -607,14 +608,15 @@ def score(root: pathlib.Path, program: str, do_fetch: bool = True) -> Score:
             pass
     obj = next((c["id"] for c in tree.checks if c.get("kind") == "objective"), None)
     return Score(program, sha, counts_on, ok, why, status, passing, len(tree.checks), ready, over, stalled,
-                 bool(obj and status.get(obj) == "pass"))
+                 bool(ok and obj and status.get(obj) == "pass"))
 
 
 def render_score(s: Score, tree: Tree) -> str:
     mark = {"pass": "PASS", "fail": "FAIL", "blocked": "blocked", "not run": "not run"}
     lines = [f"{s.program}: {s.passing}/{s.total} checks pass at {s.ref} {str(s.commit)[:10]}"
              + ("  STALLED" if s.stalled else "")
-             + ("" if s.approved else "  (tree NOT approved: " + "; ".join(s.unapproved_why) + ")")
+             + ("" if s.approved else "  (tree NOT approved: " + "; ".join(s.unapproved_why)
+                + ". Nothing counts until the owner approves it again)")
              + ("  (approved WITHOUT a validated plan)" if s.approved and not
                 (tree.data.get("approved") or {}).get("plan_validated", True) else ""),
              f"objective: {'PASSES' if s.objective_passes else 'not yet'} - {tree.objective}"]

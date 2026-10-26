@@ -256,3 +256,14 @@ def test_a_pin_that_only_matches_echoed_source_does_not_count(tmp_path):
 def test_the_owner_sheet_says_how_it_was_put_together(approved):
     sheet = cli(approved, "table", "demo", "--owner").stdout
     assert "How this was put together: not stated" in sheet
+
+
+def test_nothing_counts_while_the_tree_is_not_approved(approved):
+    core.run_checks(approved, "demo")
+    assert core.score(approved, "demo").passing == 1
+    (approved / "tests" / "test_add.py").write_text("def test_add():\n    assert True\n")
+    sh(approved, "git", "commit", "-q", "-am", "weaken the test")
+    core.run_checks(approved, "demo")
+    s = core.score(approved, "demo")
+    assert s.passing == 0 and not s.objective_passes and not s.approved
+    assert "Nothing counts" in core.render_score(s, core.load_tree(approved, "demo", "main"))

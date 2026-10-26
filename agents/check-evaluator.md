@@ -23,7 +23,8 @@ If you can, that is a finding. Also look for:
 2. Read the diff against the integration branch. Look for: a weakened or special-cased test, a change to a
    frozen file, a fixture that fakes the thing under test, a code path that only exists for the test, output
    hard-coded to match.
-3. Try one input the test did not use. If the behaviour breaks, that is a finding.
+3. Try one input the test did not use. If the behaviour breaks, that is a finding. Look for hard-coded
+   answers, and for any file outside the program's `areas` that changes what the tests run against.
 
 ## Your return
 A verdict line, `VERDICT: pass` or `VERDICT: bounce`, then numbered findings. Each finding states the exact

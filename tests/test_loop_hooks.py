@@ -172,3 +172,14 @@ def test_clean_removes_landed_and_abandoned_worktrees_and_keeps_unlanded_work(ap
     assert f"removed {wt_idle.name} (abandoned with no work)" in report
     assert f"kept {wt_work.name}: 1 commit(s) not yet landed" in report
     assert not wt_done.exists() and not wt_idle.exists() and wt_work.exists()
+
+
+def test_a_builder_cannot_change_what_the_tests_run_against(approved, tmp_path):
+    wt, transcript = bind(approved, tmp_path)
+    (wt / "src" / "demo" / "__init__.py").write_text("def add(a, b):\n    return a + b\n")
+    (wt / "tests" / "conftest.py").write_text("# a new helper that changes what the tests run against\n")
+    sh(wt, "git", "add", "src/demo/__init__.py", "tests/conftest.py")
+    sh(wt, "git", "commit", "-q", "-m", "fix add, plus a helper")
+    out = stop(approved, transcript)
+    assert out["decision"] == "block" and "outside this program's files" in out["reason"]
+    assert "tests/conftest.py" in out["reason"]
