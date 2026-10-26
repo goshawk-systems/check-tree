@@ -57,7 +57,7 @@ a missing frozen file, a non-positive appetite, a missing `fails_when`, or a com
 
 ## Which copy binds
 
-Hooks and the runner read the tree from `<remote>/<base_ref>` (after a fetch), not from the checkout a session
+Hooks and the runner read the tree from `<remote>/<base_ref>` as your own git last fetched it (check-tree never contacts a remote itself), not from the checkout a session
 happens to sit in. A session opened in a checkout a day behind still reads today's approved tree.
 
 ## Commands
@@ -86,7 +86,7 @@ Local state (results, dispatches, progress, history) lives in `.check-tree/state
 ## The hooks, in order of a builder's life
 
 1. **Dispatch** (`check_brief.py`, PreToolUse on Agent/Task). The prompt names `Check: <program>/<id>`. The hook
-   fetches, reads the binding tree, and refuses if it is invalid, unapproved, the check is unknown, already
+   reads the binding tree, and refuses if it is invalid, unapproved, the check is unknown, already
    passing, not ready, or over its appetite. It also asks the cost and cap guards first (hooks run in
    parallel), so a dispatch they refuse never leaves a worktree behind. Otherwise it creates the integration branch if needed, makes the
    builder a worktree on a fresh branch from it, and appends the brief (with a `Worktree:` line) to the prompt.

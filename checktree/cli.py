@@ -280,7 +280,8 @@ def cmd_land(a) -> int:
     if code != 0:
         sys.exit(f"the builder's branch does not merge cleanly with {integ}: {out}")
     _, head = core.git(wt, "rev-parse", "HEAD")
-    code, out = core.git(root, "fetch", "-q", str(wt), f"HEAD:refs/heads/{integ}") if cur != integ else (1, "")
+    _, old = core.git(root, "rev-parse", integ)
+    code, out = core.git(root, "update-ref", f"refs/heads/{integ}", head, old) if cur != integ else (1, "")
     if code != 0:
         sys.exit(f"could not move {integ} to {head[:10]} (is it checked out here?): {out}")
     core.progress(root, a.program, f"{a.check}: landed on {integ} at {head[:10]}", check=a.check, commit=head)

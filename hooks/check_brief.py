@@ -26,10 +26,9 @@ def main(data: dict) -> None:
         C.deny("check-tree: this session is not inside a git repository, so `Check:` cannot be bound.")
         return
     cfg = core.load_config(root)
-    warn = core.fetch(root, cfg)
     ref = core.binding_ref(root, cfg)
     tree = core.load_tree(root, program, ref)
-    note = f" ({warn})" if warn else ""
+    note = ""
     if tree is None:
         C.deny(f"check-tree: no tree for program {program!r} at {ref}{note}. Commit "
                f"{core.tree_path(program)} to {cfg['base_ref']} and have the owner approve it.")

@@ -150,7 +150,8 @@ on your own machine:
 
 - It reads and writes files in your repository: the check tree in `.check-tree/programs/`, local results and
   progress in `.check-tree/state/` (ignored by git), and builder worktrees in `.check-tree/worktrees/`.
-- It runs `git` against your own repository, including `git fetch` from the remote you already use.
+- It runs `git` against your own repository, locally. It never contacts a remote: it reads the copy of your base
+  branch that your own `git pull` or `git fetch` last brought down.
 - It runs the check commands you approved, passing them only a short list of harmless environment variables
   (paths, language, temporary folder). Nothing else from your environment reaches a check.
 - Hooks read the Claude Code session data Claude Code hands them (the tool call, the transcript path) on your

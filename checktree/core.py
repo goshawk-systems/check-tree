@@ -33,7 +33,8 @@ CONFIG_PATH = ".check-tree/config.json"
 DEFAULT_CONFIG = {
     # The ref whose copy of a tree binds, and where passes count unless a tree names `counts_on`.
     "base_ref": "main",
-    # Fetch this remote before reading the binding tree (set to null for a repo with no remote).
+    # The remote whose last-fetched base branch binds (null for a repo with no remote). check-tree never fetches
+    # it: your own git pull or fetch keeps it current.
     "remote": "origin",
     # How many times a builder is sent back on a failing check before it may return as failed.
     "max_send_backs": 2,
@@ -88,18 +89,6 @@ def load_config(root: pathlib.Path) -> dict:
 
 def now() -> str:
     return dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
-
-
-def fetch(root: pathlib.Path, cfg: dict) -> Optional[str]:
-    """Fetch the remote so hooks read today's binding tree, not a stale checkout. Returns a warning or None."""
-    remote = cfg.get("remote")
-    if not remote:
-        return None
-    code, _ = git(root, "remote", "get-url", remote)
-    if code != 0:
-        return None
-    code, out = git(root, "fetch", "-q", remote, timeout=30)
-    return None if code == 0 else f"could not fetch {remote}; read the last fetched copy ({out[:120]})"
 
 
 def binding_ref(root: pathlib.Path, cfg: dict) -> str:
@@ -513,7 +502,6 @@ def order(tree: Tree) -> list[dict]:
 def run_checks(root: pathlib.Path, program: str, only: Optional[list[str]] = None) -> list[dict]:
     """Run the binding tree's checks in a fresh worktree at the head of the branch where passes count."""
     cfg = load_config(root)
-    warn = fetch(root, cfg)
     ref = binding_ref(root, cfg)
     tree = load_tree(root, program, ref) or load_tree(root, program)
     if tree is None:
@@ -551,8 +539,6 @@ def run_checks(root: pathlib.Path, program: str, only: Optional[list[str]] = Non
     finally:
         git(root, "worktree", "remove", "--force", str(work))
         shutil.rmtree(tmp, ignore_errors=True)
-    if warn:
-        results.append({"warning": warn})
     return results
 
 
@@ -597,10 +583,10 @@ def dispatch_hours(root: pathlib.Path, program: str) -> dict[str, float]:
     return out
 
 
-def score(root: pathlib.Path, program: str, do_fetch: bool = True) -> Score:
+def score(root: pathlib.Path, program: str, do_fetch: bool = False) -> Score:
+    """The scoreboard. check-tree never contacts a remote: it reads the copy of the base branch your own git last
+    fetched (`do_fetch` is accepted for compatibility and ignored)."""
     cfg = load_config(root)
-    if do_fetch:
-        fetch(root, cfg)
     ref = binding_ref(root, cfg)
     tree = load_tree(root, program, ref) or load_tree(root, program)
     if tree is None:
