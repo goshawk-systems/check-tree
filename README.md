@@ -1,5 +1,7 @@
 # check-tree
 
+[![checked by check-tree](https://img.shields.io/badge/checked_by-check--tree-0b6e66)](https://github.com/goshawk-systems/check-tree)
+
 **Stop AI coding agents from spinning, and from saying "done" when it isn't.** check-tree is a way of
 defining and running work for teams of Claude Code agents, plus the hooks that enforce it. The plan is validated,
 then turned into a short list of pass/fail checks that the owner approves once. Each agent gets one check and
@@ -180,6 +182,14 @@ Goal not reached yet.
 Newly passing:
 - The pay-link email reaches the customer with a working link
 ...
+```
+
+## Show it on your repo
+
+If your project runs on check-tree, add this badge to your README so others can find it:
+
+```markdown
+[![checked by check-tree](https://img.shields.io/badge/checked_by-check--tree-0b6e66)](https://github.com/goshawk-systems/check-tree)
 ```
 
 ## Questions and feedback
