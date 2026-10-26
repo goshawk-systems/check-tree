@@ -214,6 +214,8 @@ def validate(tree: Tree, root: pathlib.Path, ref: Optional[str] = None) -> list[
         p.append("no `objective`: one sentence, in the owner's words")
     if not d.get("areas"):
         p.append("no `areas`: the file patterns this program owns")
+    if d.get("validation") and file_hash_at(root, ref, d["validation"]) is None:
+        p.append(f"`validation` names {d['validation']}, which does not exist" + (f" at {ref}" if ref else ""))
     ids = [c.get("id") for c in tree.checks]
     if not ids:
         p.append("no checks")
@@ -282,8 +284,12 @@ def approval_state(tree: Tree, root: pathlib.Path, ref: Optional[str]) -> tuple[
     return (not why), why
 
 
-def approve(root: pathlib.Path, program: str, by: str, words: str) -> dict:
-    """Record the owner's approval in the working copy. It binds once committed to the base ref."""
+def approve(root: pathlib.Path, program: str, by: str, words: str, without_validation: bool = False) -> dict:
+    """Record the owner's approval in the working copy. It binds once committed to the base ref.
+
+    The method validates the plan before the owner judges it (docs/method.md, step 3). A tree must name its
+    validation file (`"validation": "docs/plans/<program>-validation.md"`); skipping that takes an explicit
+    flag, and the scoreboard says so for as long as the approval stands."""
     tree = load_tree(root, program)
     if tree is None:
         raise SystemExit(f"no tree at {tree_path(program)}")
@@ -292,12 +298,18 @@ def approve(root: pathlib.Path, program: str, by: str, words: str) -> dict:
         raise SystemExit("cannot approve an invalid tree:\n  " + "\n  ".join(problems))
     if not words.strip():
         raise SystemExit("--words is required: the owner's own words approving this tree")
+    validated = bool(tree.data.get("validation"))
+    if not validated and not without_validation:
+        raise SystemExit("this tree names no `validation` file. Validate the plan first (templates/plan-validation.md, "
+                         "docs/method.md step 3) and set \"validation\" in the tree, or approve with "
+                         "--without-validation (the scoreboard will say so).")
     tree.data["approved"] = {
         "by": by,
         "words": words,
         "at": now(),
         "tree_sha256": tree_hash(tree.data),
         "frozen": {f: file_hash_at(root, None, f) for f in frozen_files(tree)},
+        "plan_validated": validated,
     }
     (root / tree_path(program)).write_text(json.dumps(tree.data, indent=2, ensure_ascii=False) + "\n")
     return tree.data["approved"]
@@ -511,7 +523,9 @@ def render_score(s: Score, tree: Tree) -> str:
     mark = {"pass": "PASS", "fail": "FAIL", "blocked": "blocked", "not run": "not run"}
     lines = [f"{s.program}: {s.passing}/{s.total} checks pass at {s.ref} {str(s.commit)[:10]}"
              + ("  STALLED" if s.stalled else "")
-             + ("" if s.approved else "  (tree NOT approved: " + "; ".join(s.unapproved_why) + ")"),
+             + ("" if s.approved else "  (tree NOT approved: " + "; ".join(s.unapproved_why) + ")")
+             + ("  (approved WITHOUT a validated plan)" if s.approved and not
+                (tree.data.get("approved") or {}).get("plan_validated", True) else ""),
              f"objective: {'PASSES' if s.objective_passes else 'not yet'} - {tree.objective}"]
     for c in order(tree):
         flag = " (ready)" if c["id"] in s.ready else ""

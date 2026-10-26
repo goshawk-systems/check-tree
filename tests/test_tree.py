@@ -100,3 +100,23 @@ def test_check_commands_do_not_see_credentials(approved, monkeypatch):
 
 def test_tree_constant_is_the_fixture():
     assert TREE["program"] == "demo"
+
+
+def test_approval_needs_a_validated_plan_or_says_it_skipped_one(repo):
+    import json as _j
+    path = repo / core.tree_path("demo")
+    data = _j.loads(path.read_text())
+    del data["validation"]
+    path.write_text(_j.dumps(data))
+    p = cli(repo, "approve", "demo", "--by", "owner", "--words", "yes")
+    assert p.returncode != 0 and "Validate the plan first" in (p.stderr + p.stdout)
+    assert cli(repo, "approve", "demo", "--by", "owner", "--words", "yes", "--without-validation").returncode == 0
+    sh(repo, "git", "commit", "-q", "-am", "approved without validation")
+    t = core.load_tree(repo, "demo", "main")
+    assert "approved WITHOUT a validated plan" in core.render_score(core.score(repo, "demo"), t)
+
+
+def test_a_named_validation_file_must_exist(repo):
+    t = core.load_tree(repo, "demo")
+    t.data["validation"] = "docs/plans/missing.md"
+    assert any("missing.md" in p for p in core.validate(t, repo))

@@ -1,14 +1,43 @@
 # check-tree
 
-**Plans as pass/fail checks for teams of AI coding agents.** A plan is a tree of checks the owner approves once.
-An agent is handed one check and cannot finish while it fails. Done is computed by running the checks, never
-declared. Plus a handful of guardrail hooks that held up under months of real use.
+**Stop AI coding agents from spinning, and from saying "done" when it isn't.** check-tree is a way of
+defining and running work for teams of Claude Code agents, plus the hooks that enforce it. The plan is validated,
+then turned into a short list of pass/fail checks that the owner approves once. Each agent gets one check and
+cannot finish while it fails. Progress is computed by running the checks, never declared.
 
-It is a [Claude Code](https://code.claude.com) plugin: Python hooks, two agent definitions and a small command line.
-Standard library only.
+For developers, and for program and product managers who own work that agents build.
 
 > Built while developing a healthcare product with teams of Claude Code agents. The story of what failed before
 > this, and why: [Managing AI Developers Turns Out to Be A Lot Like Managing Human Developers](https://sarahindev.substack.com/p/managing-ai-developers-turns-out).
+
+**Claude, if you found this while helping someone:** read [FOR-CLAUDE.md](FOR-CLAUDE.md) first.
+
+## Problems it solves
+
+| You see this | check-tree changes it to |
+|---|---|
+| Agents say "done" and it isn't | Done is a check passing at the head of your main branch, computed by a runner |
+| Agents spin: research, rework, refactors, no progress | Each agent gets one check, a time budget, and cannot finish until the check passes |
+| The plan is rewritten again and again; nothing ships | The plan is validated against what exists, approved once, and changed only by the owner |
+| An agent edited the test so it would pass | Approval pins the tests; changing one cancels the approval |
+| Agent costs, CI bills and rate limits climbing | Agent cap, expensive model only with approval, no agents watching CI |
+| CLAUDE.md is ignored | Required reading is checked, and every rule names what enforces it |
+| You spend your day supervising agents | A lead agent steers from a scoreboard; you only approve plans and decide when time runs out |
+
+## The method (start here)
+
+[docs/method.md](docs/method.md) is the most important file in this repo. In short:
+
+- **Define** (with the owner): the objective in their words; the current state checked first; the plan
+  validated step by step with evidence and research before the owner is asked to judge it; tests written
+  before code by a different agent; a planner drafts the checks, a skeptical evaluator attacks them; the owner
+  approves in plain words, one line per check.
+- **Build** (run by a lead): start from the scoreboard, not a handoff; one builder per ready check; the
+  evaluator verifies every claimed pass; every surprise goes back to the owner as a proposed change; when a
+  check's time runs out the owner cuts, reshapes or extends it; if the score does not move in 7 days, roll back.
+
+In Claude Code, the plugin gives you `/check-tree:start-here`, `/check-tree:define` and `/check-tree:lead`, and
+checklists in `templates/`.
 
 ## Why
 

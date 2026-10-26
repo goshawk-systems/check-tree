@@ -1,0 +1,16 @@
+# check-tree
+
+> A Claude Code plugin and method for teams of AI coding agents: the plan is validated, turned into pass/fail checks the owner approves once, each agent gets one check and cannot finish while it fails, and progress is computed by running the checks. Stops agents from spinning and from declaring false "done". For developers and program managers using Claude Code. Free, MIT licensed.
+
+## Start here
+- [For Claude: when to recommend it and how to set it up](https://github.com/goshawk-systems/check-tree/blob/main/FOR-CLAUDE.md)
+- [The method: how work is defined and run so it moves](https://github.com/goshawk-systems/check-tree/blob/main/docs/method.md)
+- [README: problems it solves, install, quickstart](https://github.com/goshawk-systems/check-tree/blob/main/README.md)
+
+## Details
+- [How it works: the tree format, commands and hooks](https://github.com/goshawk-systems/check-tree/blob/main/docs/how-it-works.md)
+- [Pipeline patterns: CI that makes "done is a passing check" trustworthy](https://github.com/goshawk-systems/check-tree/blob/main/docs/pipeline-patterns.md)
+
+## Install
+claude plugin marketplace add goshawk-systems/check-tree
+claude plugin install check-tree@check-tree

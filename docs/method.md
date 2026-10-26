@@ -1,0 +1,80 @@
+# The method: how work is defined and run so it moves
+
+The hooks in this repo enforce a way of working. This page is that way of working. It is the part that matters
+most: a team can write a bad check tree as easily as a bad plan, and machinery alone does not stop spinning.
+
+Two kinds of session, never mixed: **define** (with the owner, decides what done means) and **build** (run by
+a lead, makes checks pass). In Claude Code: `/check-tree:define` and `/check-tree:lead`.
+
+## Why it is shaped this way
+
+Our own audit, after months of running agent teams, before this method:
+- 0 of 51 planned tasks had a test that could show they were done.
+- One plan was revised 23 times before any code was written.
+- 10% of the lines agents changed in a week were product code; half the changes touched no product file.
+- 9 of 12 complaints about execution had been answered with a new rule, and no rule was ever removed. Every rule
+  checked an input (did you read it, did a reviewer pass it); none checked whether the work moved.
+
+The published lessons of teams building with long-running agents point the same way: the plan is a list of
+pass/fail tests written first, agents may not edit them, a separate skeptical evaluator judges claimed passes,
+and instruction files stay short. This method puts those together.
+
+## Defining the work (a define session, with the owner)
+
+1. **The objective, in the owner's words.** Verbatim, one sentence. Not a summary. If the words are ambiguous,
+   the ambiguity is a question for the owner, never something an agent resolves.
+2. **Current state first.** Before raising any gap or asking any question, establish what already exists: the
+   current plan in full, what is built, what is merged, what each step's status really is. A research note or a
+   past report is a lead to check, never a finding to pass on. Most "blockers" agents raise are answered in the
+   record.
+3. **Validate the plan before the owner is asked to judge it.** For every open step, with evidence:
+   - its true state (built, partly built, not started), with the file, commit or run that shows it;
+   - whether its done-test still measures what the objective needs, given what has been learned;
+   - whether its approach holds, from research inside the record and outside it.
+   The owner is brought what holds, what the evidence says should change, and in what order, each with its
+   source. Never a plan to assess that nobody has validated. (Template: `templates/plan-validation.md`.)
+4. **Research is a step with an end.** A question, an internal half (what our own record and code say) and an
+   external half (what published practice says), written down. It is done when it proposes plan steps, each
+   with a done-test. Research that ends in "more research needed" has not ended. (Template:
+   `templates/research-step.md`.)
+5. **Tests before code, by a different agent.** For each step whose defining test does not exist, a harness
+   check: the test exists and fails on today's code for the right reason. The agent who writes it is not the
+   agent who will make it pass.
+6. **The planner drafts the check tree** from the validated plan (`check-planner`). Every check carries the plan
+   step's own words (`plan_text`), so the plan is handed to the builder, not looked up.
+7. **The evaluator attacks it** (`check-evaluator`): any check that could pass while its outcome is false, any
+   part of the objective with no check. Fix rounds until it holds.
+8. **The owner approves in plain words, one line per check.** (Sheet: `templates/owner-approval.md`.) Their
+   words are recorded with the approval, which pins the tree and its frozen tests. Any later edit unapproves it.
+
+Checklist: `templates/define-checklist.md`.
+
+## Running the build (a build session, run by a lead)
+
+- **Start from the scoreboard, not a handoff.** `check-tree start <program>` is the whole briefing: the job, the
+  score, the ready checks with the plan's words, what only the owner can do, what is waiting to land. No prose
+  handoffs; the scoreboard and the progress log are the state.
+- **One builder per ready check**, dispatched with `Check: <program>/<id>`. The builder gets a short brief
+  instead of a reading list, works in its own worktree, and cannot finish while its check fails.
+- **The evaluator on every claimed pass.** It runs the check itself and tries to make the pass false.
+- **The lead does not write the program's code.** It steers: dispatch, land passing work, rescore.
+- **Every gap becomes a proposed change, back to the owner.** A builder's `Check wrong:` or `Noticed:` line, a
+  research result, a surprise: each goes back through define steps 3 to 8. Nothing is quietly worked around.
+- **Every check has a time budget** (`appetite_hours`). When it runs out, work on it stops and the owner decides:
+  cut it, reshape it, or extend it. Work is never extended by default.
+- **If the pass count does not move for 7 days, roll back** to the old way of working for that program, with the
+  cause written down. The method has to earn its place.
+- **A process change counts only when it is mechanical**: a hook, a check or a test, shown failing before and
+  passing after. A new sentence in an instructions file, a memory note or a handoff section is not a change.
+
+Checklist: `templates/lead-checklist.md`.
+
+## What the owner does, and only the owner
+
+- States the objective.
+- Approves each check tree, in their own words.
+- Decides when a check's time budget runs out: cut, reshape or extend.
+- Approves any change to an approved tree.
+
+Everything else is the lead's and the builders'. An agent that says it is "blocked on the owner" for anything
+else is not blocked.

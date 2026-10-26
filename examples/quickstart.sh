@@ -30,6 +30,7 @@ cat > .check-tree/programs/adder/checks.json <<'JSON'
   "program": "adder",
   "objective": "add() returns the sum of two numbers for every caller",
   "areas": ["src/adder/**"],
+  "validation": "docs/plans/adder-validation.md",
   "checks": [
     {"id": "objective", "kind": "objective", "title": "the acceptance test passes",
      "run": "python3 tests/test_add.py", "fails_when": "add() is wrong",
@@ -40,6 +41,13 @@ cat > .check-tree/programs/adder/checks.json <<'JSON'
   ]
 }
 JSON
+mkdir -p docs/plans
+cat > docs/plans/adder-validation.md <<'MD'
+# Plan validation: adder
+| Step | True state today | Done-test measures the objective? | Approach holds? | Recommendation |
+|---|---|---|---|---|
+| make add() correct | built but wrong: add(2, 3) returns -1 (src/adder/__init__.py) | yes: the acceptance test calls add() as a caller does | yes | keep |
+MD
 echo "== validate"; "$CT" validate adder
 echo; echo "== what the owner reads"; "$CT" table adder
 "$CT" approve adder --by owner --words "yes, done means the acceptance test passes" >/dev/null

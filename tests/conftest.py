@@ -17,6 +17,7 @@ TREE = {
     "program": "demo",
     "objective": "add() returns the sum of two numbers for every caller",
     "areas": ["src/demo/**"],
+    "validation": "docs/plans/demo-validation.md",
     "checks": [
         {"id": "obj", "kind": "objective", "title": "the acceptance test passes",
          "run": "python3 -m pytest -q -p no:cacheprovider tests/test_add.py",
@@ -53,6 +54,8 @@ def repo(tmp_path):
         "import sys, pathlib\nsys.path.insert(0, str(pathlib.Path(__file__).parent.parent / 'src'))\n"
         "from demo import add\n\ndef test_add():\n    assert add(2, 3) == 5\n")
     (r / "README.md").write_text("demo\n")
+    (r / "docs" / "plans").mkdir(parents=True)
+    (r / "docs" / "plans" / "demo-validation.md").write_text("# Plan validation: demo\n| Step | state |\n")
     sh(r, "git", "init", "-q", "-b", "main")
     (r / ".check-tree" / "programs" / "demo").mkdir(parents=True)
     (r / ".check-tree" / "config.json").write_text(json.dumps({"base_ref": "main", "remote": None}))

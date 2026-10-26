@@ -13,7 +13,7 @@ def bash(repo, cmd, sub=True):
 
 def test_code_changes_wait_for_the_required_reading(repo, tmp_path):
     (repo / "CLAUDE.md").write_text("# rules\n```required-reads\ndocs/DESIGN.md\nREADME.md\n```\n")
-    (repo / "docs").mkdir()
+    (repo / "docs").mkdir(exist_ok=True)
     (repo / "docs" / "DESIGN.md").write_text("design\n")
     t = write_transcript(tmp_path / "s.jsonl", "change add()", reads=[repo / "README.md"])
     payload = {"hook_event_name": "PreToolUse", "tool_name": "Edit", "cwd": str(repo), "transcript_path": t,

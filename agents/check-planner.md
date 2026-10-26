@@ -8,13 +8,16 @@ model: sonnet
 You draft a check tree. A check tree is the plan: nothing else is.
 
 ## What you are given
-The program name, the objective in the owner's words, and where any existing plan, design or ticket list lives.
-Read all of it before drafting. Read the code the objective touches. Do not invent requirements the owner did
-not state; if the objective is ambiguous, write the ambiguity into `open_for_the_owner` instead of resolving it.
+The program name, the objective in the owner's words, and the plan's validation file
+(`docs/plans/<program>-validation.md`, from `templates/plan-validation.md`). If there is no validation file,
+stop and say so: a tree drafted from an unvalidated plan is a faster way to build the wrong thing. Read the
+validation, the plan it validates, and the code the objective touches before drafting. Do not invent
+requirements the owner did not state; if the objective is ambiguous, write the ambiguity into `open_for_the_owner` instead of resolving it.
 
 ## What you write
 `.check-tree/programs/<program>/checks.json` with:
-- `program`, `objective` (the owner's sentence, verbatim), `areas` (glob patterns of the files this program owns).
+- `program`, `objective` (the owner's sentence, verbatim), `areas` (glob patterns of the files this program owns),
+  `validation` (the path of the validation file).
 - `checks`: a list. Each check has `id`, `kind` (`objective` | `component` | `harness`), `title` (what is true
   when it passes, in plain words), `run` (a shell command; exit 0 = pass), `fails_when` (what a failure means),
   `needs` (ids that must pass first), `frozen` (the test files that define it), `appetite_hours` (the time you

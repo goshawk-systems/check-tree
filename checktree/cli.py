@@ -3,7 +3,7 @@
     check-tree init <program>                      write a starter tree and config
     check-tree validate <program>                  every reason the working copy's tree cannot be approved or run
     check-tree table <program>                     the tree as the owner reads it before approving
-    check-tree approve <program> --by <who> --words "<the owner's words>"
+    check-tree approve <program> --by <who> --words "<the owner's words>" [--without-validation]
     check-tree run <program> [--check ID ...]      run checks fresh at the head where passes count
     check-tree score <program>                     the scoreboard (computed; nothing is written by hand)
     check-tree start <program>                     a lead's opening page, in place of a handoff
@@ -26,6 +26,7 @@ STARTER = {
     "program": "",
     "objective": "One sentence, in the owner's words: what is true when this program is done.",
     "areas": ["src/<program>/**"],
+    "validation": "docs/plans/<program>-validation.md",
     "checks": [
         {
             "id": "objective",
@@ -118,7 +119,7 @@ def cmd_table(a) -> int:
 
 def cmd_approve(a) -> int:
     root = _root()
-    rec = core.approve(root, a.program, a.by, a.words)
+    rec = core.approve(root, a.program, a.by, a.words, a.without_validation)
     print(f"approved {a.program} ({rec['tree_sha256'][:12]}) by {a.by}: \"{a.words}\"\n"
           f"Commit {core.tree_path(a.program)} to the base branch; it binds from there.")
     return 0
@@ -253,6 +254,8 @@ def main(argv=None) -> int:
     sp.add_argument("program")
     sp.add_argument("--by", required=True)
     sp.add_argument("--words", required=True)
+    sp.add_argument("--without-validation", action="store_true",
+                    help="approve a tree that names no plan validation file (shown on the scoreboard)")
     sp = sub.add_parser("run")
     sp.add_argument("program")
     sp.add_argument("--check", action="append")
