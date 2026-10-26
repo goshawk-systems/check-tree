@@ -62,7 +62,7 @@ them green, and the hooks make that the only way to finish.
    The headline counts product checks; the checks that only prove the tests exist are shown apart, so the
    score is not inflated before any work is done.
    The scoreboard is the runner's output. A result from an older commit counts as not run. A program whose
-   pass count has not moved in three days shows `STALLED`.
+   number of passing checks has not moved in three days shows `STALLED`.
 4. **A builder gets one check.** A dispatch whose prompt says `Check: <program>/<id>` is refused unless the tree
    is approved and the check is ready. Otherwise the hook creates the builder's own git worktree and appends a
    short brief: the objective, its one check, the frozen files and the rules. That replaces the long reading list.
@@ -130,13 +130,13 @@ passing, `check-tree land payments <id>` merges its branch into the program's in
 
 `.check-tree/config.json`. All keys are optional; defaults are in `templates/config.json`.
 
-| Key | Default | Meaning |
+| Setting | Default | Meaning |
 |---|---|---|
 | `base_ref` | `main` | The branch whose copy of a tree binds, and where passes count |
 | `remote` | `origin` | Fetched before reading the binding tree; `null` for a local-only repo |
 | `max_send_backs` | `2` | Failing stops before a builder may return as failed |
 | `check_timeout_seconds` | `1800` | Per check command |
-| `stalled_after_days` | `3` | When an unmoving pass count shows `STALLED` |
+| `stalled_after_days` | `3` | When an unmoving number of passing checks shows `STALLED` |
 | `scope` | `enforce` | `warn` or `off` to loosen the file-ownership rule |
 | `guards.*` | see template | Agent cap, expensive models, approval marker, required-reads file |
 
@@ -204,7 +204,7 @@ Every report gets a reply.
 ## Status
 
 Version 0.1. The design has run in a real multi-agent build since October 2026; this is a from-scratch, general
-version of it, not a copy. Early numbers from that build, honestly: product code per token used went up about
+version of it, not a copy. Early numbers from that build, honestly: product code for the same amount of AI usage went up about
 threefold over two weeks, two of four programs moved steadily on their checks, and no program's objective check
 passes yet. Issues and pull requests welcome.
 
