@@ -95,15 +95,13 @@ claude plugin install check-tree@check-tree
 
 Or inside Claude Code: `/plugin marketplace add goshawk-systems/check-tree`, then `/plugin install check-tree@check-tree`.
 
-The three guides are also standard Agent Skills, so other agent tools that read skills can use the method:
-`npx skills add goshawk-systems/check-tree`. The enforcement (the hooks) needs the Claude Code plugin.
-
-After installing, restart Claude Code; each session then starts with a note giving the command line's full path.
-If you do not see that note (for example right after installing, before a restart), find it with `CT=$(ls "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/check-tree/check-tree/*/bin/check-tree | tail -1)` (then use `"$CT"`; set `CLAUDE_CONFIG_DIR` first if Claude Code uses a custom config folder).
-The command line has no dependencies. You can also clone the repo and put `bin/` on your `PATH`:
+After installing, restart Claude Code. With the plugin enabled, Claude Code puts the `check-tree` command
+on its path, so Claude runs it directly, and each session starts with a note saying where it is installed.
+The command line has no dependencies. To use it outside Claude Code, clone the repo and run
+`check-tree/bin/check-tree`:
 
 ```bash
-git clone https://github.com/goshawk-systems/check-tree && export PATH="$PWD/check-tree/bin:$PATH"
+git clone https://github.com/goshawk-systems/check-tree
 ```
 
 ## Quickstart
@@ -112,7 +110,7 @@ git clone https://github.com/goshawk-systems/check-tree && export PATH="$PWD/che
 check-tree init payments            # a starter tree and .check-tree/config.json
 # validate the plan (docs/method.md), commit it, write and COMMIT the defining tests, then put that
 # commit in the tree in place of <TESTS-COMMIT>
-$EDITOR .check-tree/programs/payments/checks.json
+# edit .check-tree/programs/payments/checks.json
 check-tree validate payments        # every reason it cannot be approved yet
 check-tree table payments --owner   # the plain-words sheet the owner reads before approving
 check-tree approve payments --by owner --words "yes, this is what done means" --answer "<one per open question>"

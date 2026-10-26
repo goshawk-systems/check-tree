@@ -31,7 +31,7 @@ Bring the owner: what holds, what should change, the order, each with its source
 Never ask them to assess a plan you have not validated.
 
 ## 4. The tree
-The session-start message tells you where the `check-tree` command line is installed; use that full path. If you do not see that note (for example right after installing, before a restart), find it with `CT=$(ls "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/check-tree/check-tree/*/bin/check-tree | tail -1)` (then use `"$CT"`; set `CLAUDE_CONFIG_DIR` first if Claude Code uses a custom config folder). The docs and templates named here are in that plugin folder.
+The session-start message tells you where the `check-tree` command line is installed; use that full path. If you do not see that note yet (for example right after installing, before a restart), restart Claude Code: with the plugin enabled, `check-tree` is on Claude Code's command path. The docs and templates named here are in that plugin folder.
 Follow "Order of commits" in `docs/method.md`.
 - Run `check-tree init <program>` if no tree exists. Commit the validation file and `.check-tree/config.json`.
 - Set `areas` to the product folders this program changes (for example `src/invoices/**`), not the tests and not

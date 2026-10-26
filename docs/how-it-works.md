@@ -16,10 +16,10 @@
       "id": "objective",
       "kind": "objective",
       "title": "A scripted customer pays a test invoice end to end and the receipt arrives",
-      "run": "npx playwright test e2e/pay-invoice.spec.ts",
+      "run": "python3 -m pytest -q tests/e2e/test_pay_invoice.py",
       "fails_when": "Any step of paying fails for a real customer, or no receipt is sent",
       "needs": ["h-e2e-spec", "card-charge"],
-      "frozen": ["e2e/pay-invoice.spec.ts"],
+      "frozen": ["tests/e2e/test_pay_invoice.py"],
       "appetite_hours": 6,
       "plan_text": "Customers pay invoices online (plan step 3)"
     }
