@@ -120,3 +120,49 @@ def test_a_named_validation_file_must_exist(repo):
     t = core.load_tree(repo, "demo")
     t.data["validation"] = "docs/plans/missing.md"
     assert any("missing.md" in p for p in core.validate(t, repo))
+
+
+def test_red_at_passes_only_when_the_test_failed_for_a_real_reason_before_the_work(repo):
+    first = sh(repo, "git", "rev-list", "--max-parents=0", "HEAD").stdout.strip()
+    ok, why = core.red_at(repo, first, "python3 -m pytest -q -p no:cacheprovider tests/test_add.py")
+    assert ok, why
+    ok, why = core.red_at(repo, first, "python3 -m pytest -q -p no:cacheprovider tests/test_missing.py")
+    assert not ok and "cannot run" in why
+    ok, why = core.red_at(repo, first, "python3 -c 'pass'")
+    assert not ok and "PASSES" in why
+
+
+def test_the_harness_stays_green_after_the_work_is_done(approved):
+    (approved / "src" / "demo" / "__init__.py").write_text("def add(a, b):\n    return a + b\n")
+    sh(approved, "git", "commit", "-q", "-am", "fix add")
+    status = {r["check"]: r["status"] for r in core.run_checks(approved, "demo") if "check" in r}
+    assert status == {"h-test": "pass", "obj": "pass"}
+
+
+def test_a_placeholder_commit_and_a_missing_proven_with_are_refused(repo):
+    t = core.load_tree(repo, "demo")
+    t.data["checks"][1]["run"] = "check-tree red-at <TESTS-COMMIT> -- pytest"
+    del t.data["checks"][0]["proven_with"]
+    problems = core.validate(t, repo)
+    assert any("<TESTS-COMMIT>" in p for p in problems) and any("proven_with" in p for p in problems)
+
+
+def test_the_owner_sheet_has_plain_words_only(approved):
+    out = cli(approved, "table", "demo", "--owner").stdout
+    assert "Done means: the acceptance test passes" in out and "Proven with:" in out and "Your answer" in out
+    for jargon in ("h-test", "harness", "frozen", "sha256", "tests/test_add.py"):
+        assert jargon not in out, jargon
+
+
+def test_init_writes_a_full_config_and_a_usable_test_name(tmp_path):
+    r = tmp_path / "fresh"
+    r.mkdir()
+    sh(r, "git", "init", "-q", "-b", "main")
+    (r / "x").write_text("x")
+    sh(r, "git", "add", "x")
+    sh(r, "git", "commit", "-q", "-m", "x")
+    assert cli(r, "init", "invoice-payments").returncode == 0
+    cfg = json.loads((r / ".check-tree" / "config.json").read_text())
+    assert cfg["remote"] is None and "guards" in cfg
+    tree = (r / core.tree_path("invoice-payments")).read_text()
+    assert "test_invoice_payments.py" in tree and "test_invoice-payments" not in tree

@@ -22,9 +22,11 @@ TREE = {
         {"id": "obj", "kind": "objective", "title": "the acceptance test passes",
          "run": "python3 -m pytest -q -p no:cacheprovider tests/test_add.py",
          "fails_when": "add() is wrong for a caller", "needs": ["h-test"], "frozen": ["tests/test_add.py"],
+         "proven_with": "the acceptance test calling add() as a caller would",
          "appetite_hours": 4, "plan_text": "make add() correct"},
         {"id": "h-test", "kind": "harness", "title": "the acceptance test exists",
-         "run": "test -f tests/test_add.py", "fails_when": "the test file is missing", "needs": [],
+         "run": "test -f tests/test_add.py && \"$CHECK_TREE_BIN\" red-at <TESTS-COMMIT> -- python3 -m pytest -q -p no:cacheprovider tests/test_add.py",
+         "fails_when": "the test file is missing, or it did not fail for a real reason before the work", "needs": [],
          "frozen": ["tests/test_add.py"], "appetite_hours": 1},
     ],
 }
@@ -57,12 +59,16 @@ def repo(tmp_path):
     (r / "docs" / "plans").mkdir(parents=True)
     (r / "docs" / "plans" / "demo-validation.md").write_text("# Plan validation: demo\n| Step | state |\n")
     sh(r, "git", "init", "-q", "-b", "main")
-    (r / ".check-tree" / "programs" / "demo").mkdir(parents=True)
-    (r / ".check-tree" / "config.json").write_text(json.dumps({"base_ref": "main", "remote": None}))
-    (r / ".check-tree" / "programs" / "demo" / "checks.json").write_text(json.dumps(TREE, indent=2))
     (r / ".gitignore").write_text(".check-tree/state/\n.check-tree/worktrees/\n")
     sh(r, "git", "add", "-A")
-    sh(r, "git", "commit", "-q", "-m", "start")
+    sh(r, "git", "commit", "-q", "-m", "code and the defining test")
+    tests_commit = sh(r, "git", "rev-parse", "HEAD").stdout.strip()
+    (r / ".check-tree" / "programs" / "demo").mkdir(parents=True)
+    (r / ".check-tree" / "config.json").write_text(json.dumps({"base_ref": "main", "remote": None}))
+    (r / ".check-tree" / "programs" / "demo" / "checks.json").write_text(
+        json.dumps(TREE, indent=2).replace("<TESTS-COMMIT>", tests_commit))
+    sh(r, "git", "add", "-A")
+    sh(r, "git", "commit", "-q", "-m", "the tree")
     return r
 
 

@@ -237,6 +237,13 @@ def validate(tree: Tree, root: pathlib.Path, ref: Optional[str] = None) -> list[
             p.append(f"{cid}: `run` cannot fail ({run!r}); a check must be able to fail")
         if not str(c.get("fails_when", "")).strip():
             p.append(f"{cid}: no `fails_when`: say what a failure means")
+        if "<TESTS-COMMIT>" in run:
+            p.append(f"{cid}: replace <TESTS-COMMIT> with the commit that added the defining tests "
+                     f"(commit the tests first: docs/method.md, 'Order of commits')")
+        if c.get("kind") == "objective" and not str(c.get("proven_with", "")).strip():
+            p.append(f"{cid}: no `proven_with`: say in plain words what the objective is measured against "
+                     f"(e.g. 'the real checkout page in staging', 'a fake card processor in tests'); the owner "
+                     f"must see it before approving")
         if not isinstance(c.get("appetite_hours"), (int, float)) or c["appetite_hours"] <= 0:
             p.append(f"{cid}: `appetite_hours` must be a positive number: the time the owner bets on it")
         for n in c.get("needs", []):
@@ -352,6 +359,8 @@ def check_env(root: pathlib.Path, program: str, workdir: pathlib.Path) -> dict:
     env["CHECK_TREE_PROGRAM"] = program
     env["CHECK_TREE_PROGRAM_DIR"] = str(workdir / PROGRAMS_DIR / program)
     env["CHECK_TREE_ROOT"] = str(workdir)
+    env["CHECK_TREE_BIN"] = str(PKG_ROOT / "bin" / "check-tree")
+    env["CHECK_TREE_MAIN"] = str(root)
     return env
 
 
@@ -369,6 +378,40 @@ def run_command(cmd: str, workdir: pathlib.Path, env: dict, timeout: int) -> tup
 def tail(text: str, lines: int = 40) -> str:
     rows = text.splitlines()
     return "\n".join(rows[-lines:])
+
+
+# A "failure" that only shows the test could not run proves nothing about the product.
+NOT_A_REAL_FAILURE = re.compile(
+    r"ModuleNotFoundError|ImportError|SyntaxError|IndentationError|collected 0 items|no tests ran|"
+    r"ERROR collecting|file or directory not found|command not found|No such file or directory|"
+    r"can't open file|unrecognized arguments")
+PKG_ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+
+def red_at(root: pathlib.Path, commit: str, cmd: str, timeout: int = 1800) -> tuple[bool, str]:
+    """Does `cmd` fail, for a real reason, at `commit`? The defining-test harness check: run against the commit
+    that added the tests (before any product work), so it stays green after the work is done."""
+    sha = head_of(root, commit)
+    if not sha:
+        return False, f"commit {commit!r} not found"
+    tmp = pathlib.Path(tempfile.mkdtemp(prefix="check-tree-red-"))
+    work = tmp / "at"
+    code, out = git(root, "worktree", "add", "--detach", "-q", str(work), sha)
+    if code != 0:
+        shutil.rmtree(tmp, ignore_errors=True)
+        return False, f"could not check out {sha[:10]}: {out}"
+    try:
+        ok, output, _ = run_command(cmd, work, check_env(root, "red-at", work), timeout)
+    finally:
+        git(root, "worktree", "remove", "--force", str(work))
+        shutil.rmtree(tmp, ignore_errors=True)
+    if ok:
+        return False, f"the test PASSES at {sha[:10]}: it does not prove the work is missing"
+    bad = NOT_A_REAL_FAILURE.search(output)
+    if bad:
+        return False, (f"the test fails at {sha[:10]} only because it cannot run ({bad.group(0)}); "
+                       f"a defining test must fail on a missing behaviour, not a missing file:\n" + tail(output, 15))
+    return True, f"fails at {sha[:10]} for a real reason:\n" + tail(output, 8)
 
 
 def order(tree: Tree) -> list[dict]:

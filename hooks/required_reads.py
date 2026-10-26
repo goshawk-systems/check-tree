@@ -11,6 +11,7 @@ The list is a fenced block in CLAUDE.md (configurable):
 The agent's own transcript is searched for a Read of each file. Telling an agent to read something is not
 enough; in our record one agent type opened the core design document in 0 of 208 runs before this check.
 A builder working inside a check-tree worktree is exempt: it gets its check's brief instead of a reading list.
+A listed file that does not exist in the repo does not block anything.
 """
 from __future__ import annotations
 
@@ -55,7 +56,7 @@ def main(data: dict) -> None:
     if target and C.worktree_program(root, target):
         return
     cfg = C.guard_config(root)
-    need = required(root, cfg["required_reads_file"])
+    need = [f for f in required(root, cfg["required_reads_file"]) if (root / f).is_file()]
     if not need:
         return
     have = opened(C.agent_transcript(data), root)

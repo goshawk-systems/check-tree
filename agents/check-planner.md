@@ -27,9 +27,12 @@ requirements the owner did not state; if the objective is ambiguous, write the a
 ## Rules
 1. **Exactly one objective check**, measured at the consumer: the way a real user or caller meets the outcome
    (an end-to-end test, a scripted run against the running app). Never "the unit tests pass".
-2. **Tests before code.** For every component whose defining test does not exist, add a `harness` check that the
-   test exists and FAILS on today's code for the right reason. Name that test in `frozen`. A different agent
-   writes it than the one who will make it pass.
+2. **Tests before code.** For every component whose defining test does not exist, add a `harness` check:
+   `test -f <test> && "$CHECK_TREE_BIN" red-at <TESTS-COMMIT> -- <test command>`. It passes only if the test
+   failed, for a real reason, at the commit that added it, so it stays green after the work. Name the test in
+   `frozen`. A different agent writes it than the one who will make it pass.
+   The objective check carries `proven_with`: what it is measured against, in plain words. Steps the owner
+   dropped go in `dropped`. If several checks change the same files, chain them with `needs`.
 3. **Every check can fail.** A command that cannot fail (`true`, `echo ...`) is not a check. If you cannot state
    `fails_when` concretely, the check is not ready.
 4. **Recompute, never believe.** A check reads the record or runs the thing. It never trusts a report, a status

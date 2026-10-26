@@ -14,6 +14,7 @@ Read these before changing code. A hook checks that you opened them. [hook: requ
 ```required-reads
 docs/ARCHITECTURE.md
 ```
+<!-- List files that exist in your repo. A listed file that does not exist yet is skipped, not enforced. -->
 
 ## How work is planned and done
 - A program's plan is its check tree: `.check-tree/programs/<program>/checks.json`. Done means a check passes at

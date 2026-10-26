@@ -34,12 +34,16 @@
 | `integration_branch` | Where builders' work collects. Default `check-tree/<program>`. |
 | `counts_on` | Where passes count. Default: `base_ref` from the config, usually `main`. |
 | `kind` | `objective` (exactly one; measured where the outcome is used), `component`, or `harness` (the test or tool a component check needs, usually "the defining test exists and fails on today's code"). |
-| `run` | A shell command run from the repository root; exit 0 means pass. It gets `CHECK_TREE_PROGRAM`, `CHECK_TREE_PROGRAM_DIR` and `CHECK_TREE_ROOT`. Variables that look like credentials (cloud keys, tokens, passwords, database URLs) are removed. |
+| `run` | A shell command run from the repository root; exit 0 means pass. It gets `CHECK_TREE_PROGRAM`, `CHECK_TREE_PROGRAM_DIR`, `CHECK_TREE_ROOT` and `CHECK_TREE_BIN` (the command line, for `red-at`). Variables that look like credentials (cloud keys, tokens, passwords, database URLs) are removed. |
 | `fails_when` | What a failure means, in plain words. Required. |
+| `proven_with` | Required on the objective check: what it is measured against, in plain words ("the real checkout page in staging", "a fake card processor in tests"). Shown to the owner. |
 | `needs` | Check ids that must pass first. A check whose needs fail is `blocked`, not run. |
 | `frozen` | Files that define the check. The approval pins their contents. |
 | `appetite_hours` | The time the owner bets on this check. After that many hours since its first dispatch, the dispatch hook refuses it until the owner cuts, reshapes or extends it. |
 | `plan_text` | The existing plan's own words for this step. It goes into the builder's brief, so the plan is handed over rather than looked up. |
+| `dropped` | Plan steps the owner dropped, with their words. Shown on the approval sheet. |
+| `open_for_the_owner` | Questions only the owner can answer. Shown on the approval sheet. |
+| `validation` | Path of the plan-validation file. Approval requires it (or `--without-validation`, which the scoreboard shows). |
 | `approved` | Written by `check-tree approve`: who, their words, when, the tree's hash and each frozen file's hash. |
 
 `check-tree validate` refuses a tree with no objective, more than one, duplicate ids, unknown or looping needs,
@@ -56,7 +60,8 @@ happens to sit in. A session opened in a checkout a day behind still reads today
 |---|---|
 | `init <program>` | Writes a starter tree, `.check-tree/config.json`, and ignores the local state folders. |
 | `validate <program>` | Every reason the working copy's tree cannot be approved or run. |
-| `table <program>` | The tree as the owner reads it before approving, with the hash they approve. |
+| `table <program> [--owner]` | The tree with ids and the hash; `--owner` prints the plain-words approval sheet. |
+| `red-at <commit> -- <command>` | Passes if the command FAILS at that commit for a real reason (not a missing file, import or syntax error). The harness check for a defining test: it stays green after the work is done. |
 | `approve <program> --by --words` | Records the approval in the working copy. It binds once committed to the base branch. |
 | `run <program> [--check ID]` | Runs checks in dependency order, in a fresh detached worktree at the head of `counts_on`, and records each result with the commit it ran at. |
 | `score <program>` | The scoreboard: results recorded for the current head only; anything else is `not run`. Shows ready checks, over-appetite checks and `STALLED`. |

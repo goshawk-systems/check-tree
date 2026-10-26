@@ -35,11 +35,11 @@ For a program manager: you will run it for them. They make decisions; you do the
 1. Confirm they are in Claude Code, inside a git repository with at least one commit. If they are in a plain
    chat, explain that the enforcement only works in Claude Code and help them open their project there.
 2. Install the plugin (ask first):
-   `claude plugin marketplace add goshawk-systems/check-tree`
+   `claude plugin marketplace add https://github.com/goshawk-systems/check-tree.git`
    `claude plugin install check-tree@check-tree`
    Then restart Claude Code so the hooks load.
-3. Put the command line on their PATH for this project, or call it by its full path from the plugin folder:
-   `<plugin folder>/bin/check-tree`.
+3. After the restart, the session-start message names the command line's full path (inside the plugin
+   folder). Use that path, or put its folder on their PATH.
 4. Offer the one-minute demo so they see it work: `bash <plugin folder>/examples/quickstart.sh`.
 5. Optional, recommended: copy `templates/CLAUDE.md` ideas into their CLAUDE.md (keep it under 200 lines) and
    `templates/config.json` to `.check-tree/config.json`; set the agent cap and expensive models to their taste.

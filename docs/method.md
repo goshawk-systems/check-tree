@@ -37,15 +37,29 @@ and instruction files stay short. This method puts those together.
    external half (what published practice says), written down. It is done when it proposes plan steps, each
    with a done-test. Research that ends in "more research needed" has not ended. (Template:
    `templates/research-step.md`.)
-5. **Tests before code, by a different agent.** For each step whose defining test does not exist, a harness
-   check: the test exists and fails on today's code for the right reason. The agent who writes it is not the
-   agent who will make it pass.
+5. **Tests before code, by a different agent.** For each step whose defining test does not exist, a different
+   agent writes it first, and it is committed before any product work. Its harness check uses
+   `check-tree red-at <that commit> -- <the test command>`: it passes only if the test FAILED at that commit for a
+   real reason (not a missing file or import). Because it looks at that fixed commit, it stays green after the
+   work is done. If the place a user meets the outcome does not exist yet (no web page, no email service), ask
+   the owner what the objective will be measured against for now, and write it in the check's `proven_with`
+   (for example "a fake card processor in tests"). The owner sees it before approving.
 6. **The planner drafts the check tree** from the validated plan (`check-planner`). Every check carries the plan
    step's own words (`plan_text`), so the plan is handed to the builder, not looked up.
 7. **The evaluator attacks it** (`check-evaluator`): any check that could pass while its outcome is false, any
    part of the objective with no check. Fix rounds until it holds.
-8. **The owner approves in plain words, one line per check.** (Sheet: `templates/owner-approval.md`.) Their
+8. **The owner approves in plain words, one line per check.** Show them `check-tree table <program> --owner`:
+   what done means, when it fails, what it is proven with, the time budget. No ids, file names or hashes. Their
    words are recorded with the approval, which pins the tree and its frozen tests. Any later edit unapproves it.
+9. **Retire the old plan.** Put a line at the top of the old plan document saying it is superseded by the check
+   tree, and record dropped steps in the tree's `dropped` list, with the owner's words. Otherwise agents keep
+   working from the old document.
+
+### Order of commits
+1. The validation file and `.check-tree/config.json`.
+2. The defining tests (they fail now). Note this commit: it is `<TESTS-COMMIT>` in the harness checks.
+3. The tree, with `<TESTS-COMMIT>` replaced; `check-tree validate` until `valid`.
+4. `check-tree approve ...`, then commit the tree again (it now carries the approval). From here it binds.
 
 Checklist: `templates/define-checklist.md`.
 
@@ -54,7 +68,8 @@ Checklist: `templates/define-checklist.md`.
 - **Start from the scoreboard, not a handoff.** `check-tree start <program>` is the whole briefing: the job, the
   score, the ready checks with the plan's words, what only the owner can do, what is waiting to land. No prose
   handoffs; the scoreboard and the progress log are the state.
-- **One builder per ready check**, dispatched with `Check: <program>/<id>`. The builder gets a short brief
+- **One builder per ready check**, dispatched with `Check: <program>/<id>`. If several checks change the same
+  files, chain them with `needs` so builders do not collide, or expect to resolve conflicts when landing. The builder gets a short brief
   instead of a reading list, works in its own worktree, and cannot finish while its check fails.
 - **The evaluator on every claimed pass.** It runs the check itself and tries to make the pass false.
 - **The lead does not write the program's code.** It steers: dispatch, land passing work, rescore.

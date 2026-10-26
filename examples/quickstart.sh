@@ -19,13 +19,14 @@ got = add(2, 3)
 assert got == 5, f"add(2, 3) returned {got}, expected 5"
 print("add() is correct")
 PY
-git add -A && git commit -qm "start"
+git add -A && git commit -qm "start: the code, and the defining test (written before the fix)"
+TESTS_COMMIT="$(git rev-parse HEAD)"
 
 "$CT" init adder >/dev/null
 cat > .check-tree/config.json <<'JSON'
 {"base_ref": "main", "remote": null}
 JSON
-cat > .check-tree/programs/adder/checks.json <<'JSON'
+cat > .check-tree/programs/adder/checks.json <<JSON
 {
   "program": "adder",
   "objective": "add() returns the sum of two numbers for every caller",
@@ -34,9 +35,11 @@ cat > .check-tree/programs/adder/checks.json <<'JSON'
   "checks": [
     {"id": "objective", "kind": "objective", "title": "the acceptance test passes",
      "run": "python3 tests/test_add.py", "fails_when": "add() is wrong",
+     "proven_with": "a test that calls add() the way a caller does",
      "needs": ["h-test"], "frozen": ["tests/test_add.py"], "appetite_hours": 2},
-    {"id": "h-test", "kind": "harness", "title": "the acceptance test exists",
-     "run": "test -f tests/test_add.py", "fails_when": "the test is missing", "needs": [],
+    {"id": "h-test", "kind": "harness", "title": "the acceptance test exists and failed before the fix",
+     "run": "test -f tests/test_add.py && \\"\$CHECK_TREE_BIN\\" red-at $TESTS_COMMIT -- python3 tests/test_add.py",
+     "fails_when": "the test is missing, or did not fail for a real reason before the fix", "needs": [],
      "frozen": ["tests/test_add.py"], "appetite_hours": 1}
   ]
 }
@@ -49,7 +52,7 @@ cat > docs/plans/adder-validation.md <<'MD'
 | make add() correct | built but wrong: add(2, 3) returns -1 (src/adder/__init__.py) | yes: the acceptance test calls add() as a caller does | yes | keep |
 MD
 echo "== validate"; "$CT" validate adder
-echo; echo "== what the owner reads"; "$CT" table adder
+echo; echo "== what the owner reads"; "$CT" table adder --owner
 "$CT" approve adder --by owner --words "yes, done means the acceptance test passes" >/dev/null
 git add -A && git commit -qm "adder: approved check tree"
 

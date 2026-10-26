@@ -2,7 +2,8 @@
 
     check-tree init <program>                      write a starter tree and config
     check-tree validate <program>                  every reason the working copy's tree cannot be approved or run
-    check-tree table <program>                     the tree as the owner reads it before approving
+    check-tree table <program> [--owner]           the tree; --owner prints the plain-words approval sheet
+    check-tree red-at <commit> -- <test command>   passes if the test FAILS at that commit for a real reason
     check-tree approve <program> --by <who> --words "<the owner's words>" [--without-validation]
     check-tree run <program> [--check ID ...]      run checks fresh at the head where passes count
     check-tree score <program>                     the scoreboard (computed; nothing is written by hand)
@@ -18,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import re
 import sys
 
 from . import core
@@ -25,28 +27,31 @@ from . import core
 STARTER = {
     "program": "",
     "objective": "One sentence, in the owner's words: what is true when this program is done.",
-    "areas": ["src/<program>/**"],
+    "areas": ["src/<ident>/**"],
     "validation": "docs/plans/<program>-validation.md",
+    "open_for_the_owner": [],
+    "dropped": [],
     "checks": [
         {
             "id": "objective",
             "kind": "objective",
             "title": "The outcome the owner cares about, measured where it is used",
-            "run": "python3 -m pytest -q tests/acceptance/test_<program>.py",
+            "run": "python3 -m pytest -q -p no:cacheprovider tests/acceptance/test_<ident>.py",
             "fails_when": "The outcome is not true for a real user or caller.",
-            "needs": ["harness-acceptance-test"],
-            "frozen": [],
+            "proven_with": "Say in plain words what this is measured against, e.g. the real page in staging, or a fake payment provider in tests.",
+            "needs": ["h-acceptance-test"],
+            "frozen": ["tests/acceptance/test_<ident>.py"],
             "appetite_hours": 8,
             "plan_text": "",
         },
         {
-            "id": "harness-acceptance-test",
+            "id": "h-acceptance-test",
             "kind": "harness",
-            "title": "The acceptance test exists and fails on today's code for the right reason",
-            "run": "python3 -m pytest -q tests/acceptance/test_<program>.py; test $? -ne 0",
-            "fails_when": "The test is missing, or passes before the work is done (it would prove nothing).",
+            "title": "The acceptance test exists and fails, for a real reason, on the code as it was before the work",
+            "run": "test -f tests/acceptance/test_<ident>.py && \"$CHECK_TREE_BIN\" red-at <TESTS-COMMIT> -- python3 -m pytest -q -p no:cacheprovider tests/acceptance/test_<ident>.py",
+            "fails_when": "The test is missing, passes before the work (it would prove nothing), or fails only because it cannot run.",
             "needs": [],
-            "frozen": [],
+            "frozen": ["tests/acceptance/test_<ident>.py"],
             "appetite_hours": 2,
             "plan_text": "",
         },
@@ -73,19 +78,26 @@ def cmd_init(a) -> int:
     if path.exists():
         sys.exit(f"{path} already exists")
     path.parent.mkdir(parents=True, exist_ok=True)
-    tree = json.loads(json.dumps(STARTER).replace("<program>", a.program))
+    ident = re.sub(r"[^A-Za-z0-9_]", "_", a.program)
+    tree = json.loads(json.dumps(STARTER).replace("<program>", a.program).replace("<ident>", ident))
     tree["program"] = a.program
     path.write_text(json.dumps(tree, indent=2) + "\n")
     cfg = root / core.CONFIG_PATH
     if not cfg.exists():
-        cfg.write_text(json.dumps(core.DEFAULT_CONFIG, indent=2) + "\n")
+        template = core.PKG_ROOT / "templates" / "config.json"
+        config = json.loads(template.read_text()) if template.is_file() else dict(core.DEFAULT_CONFIG)
+        if core.git(root, "remote", "get-url", "origin")[0] != 0:
+            config["remote"] = None  # no remote: read trees and score on the local base branch
+        cfg.write_text(json.dumps(config, indent=2) + "\n")
     gi = root / ".gitignore"
     lines = gi.read_text().splitlines() if gi.exists() else []
     for entry in (".check-tree/state/", ".check-tree/worktrees/"):
         if entry not in lines:
             lines.append(entry)
     gi.write_text("\n".join(lines) + "\n")
-    print(f"wrote {path.relative_to(root)}; edit it, then `check-tree validate {a.program}`")
+    print(f"wrote {path.relative_to(root)} and {core.CONFIG_PATH}.\n"
+          f"Next (docs/method.md): validate the plan, write and COMMIT the defining tests, put that commit in place "
+          f"of <TESTS-COMMIT>, then `check-tree validate {a.program}`.")
     return 0
 
 
@@ -101,11 +113,37 @@ def cmd_validate(a) -> int:
     return 1 if problems else 0
 
 
+def owner_sheet(tree: core.Tree) -> str:
+    """The approval sheet in plain words: no ids, kinds, paths or hashes."""
+    out = [f"# Approval: {tree.program}", "", f"Your objective: \"{tree.objective}\"", "",
+           "Read each line and answer yes, no, or change it, in your own words.", ""]
+    n = 0
+    for c in core.order(tree):
+        n += 1
+        line = f"{n}. Done means: {c.get('title', '')}\n   It fails when: {c.get('fails_when', '')}"
+        if c.get("proven_with"):
+            line += f"\n   Proven with: {c['proven_with']}"
+        h = c.get("appetite_hours")
+        line += f"\n   Time budget: {h} hour{'' if h == 1 else 's'}\n   Your answer: ________"
+        out.append(line)
+    if tree.data.get("dropped"):
+        out += ["", "Dropped from the plan, at your word:"] + [f"- {d}" for d in tree.data["dropped"]]
+    if tree.data.get("open_for_the_owner"):
+        out += ["", "Questions only you can answer:"] + [f"- {q}" for q in tree.data["open_for_the_owner"]]
+    out += ["", "By approving you agree: nothing else counts as done; when a check runs out of time you decide to cut,",
+            "reshape or extend it; if the number of passing checks does not move in 7 days, this goes back to the old",
+            "way of working."]
+    return "\n".join(out)
+
+
 def cmd_table(a) -> int:
     root = _root()
     tree = core.load_tree(root, a.program)
     if tree is None:
         sys.exit(f"no tree at {core.tree_path(a.program)}")
+    if a.owner:
+        print(owner_sheet(tree))
+        return 0
     print(f"{tree.program}\nObjective: {tree.objective}\nOwns: {', '.join(tree.areas)}\n")
     for c in core.order(tree):
         needs = f" (after {', '.join(c.get('needs', []))})" if c.get("needs") else ""
@@ -121,7 +159,8 @@ def cmd_approve(a) -> int:
     root = _root()
     rec = core.approve(root, a.program, a.by, a.words, a.without_validation)
     print(f"approved {a.program} ({rec['tree_sha256'][:12]}) by {a.by}: \"{a.words}\"\n"
-          f"Commit {core.tree_path(a.program)} to the base branch; it binds from there.")
+          f"Commit {core.tree_path(a.program)} to the base branch (with the validation file and config, if not yet "
+          f"committed); it binds from there.")
     return 0
 
 
@@ -222,6 +261,17 @@ def cmd_land(a) -> int:
     return 0
 
 
+def cmd_red_at(a) -> int:
+    import shlex
+    args = a.cmd[1:] if a.cmd and a.cmd[0] == "--" else a.cmd
+    cmd = args[0] if len(args) == 1 else shlex.join(args)
+    if not cmd:
+        sys.exit("usage: check-tree red-at <commit> -- <test command>")
+    ok, why = core.red_at(_root(), a.commit, cmd)
+    print(why)
+    return 0 if ok else 1
+
+
 def cmd_clean(a) -> int:
     for line in core.clean_worktrees(_root(), a.program, a.hours):
         print(line)
@@ -246,10 +296,16 @@ def cmd_list(a) -> int:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="check-tree", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ("init", "validate", "table", "score", "start"):
+    sub = ap.add_subparsers(dest="command", required=True)
+    for name in ("init", "validate", "score", "start"):
         sp = sub.add_parser(name)
         sp.add_argument("program")
+    sp = sub.add_parser("table")
+    sp.add_argument("program")
+    sp.add_argument("--owner", action="store_true", help="the plain-words approval sheet for the owner")
+    sp = sub.add_parser("red-at")
+    sp.add_argument("commit")
+    sp.add_argument("cmd", nargs=argparse.REMAINDER)
     sp = sub.add_parser("approve")
     sp.add_argument("program")
     sp.add_argument("--by", required=True)
@@ -271,7 +327,7 @@ def main(argv=None) -> int:
     sp.add_argument("line")
     sub.add_parser("list")
     a = ap.parse_args(argv)
-    return globals()[f"cmd_{a.cmd}"](a)
+    return globals()[f"cmd_{a.command.replace('-', '_')}"](a)
 
 
 if __name__ == "__main__":

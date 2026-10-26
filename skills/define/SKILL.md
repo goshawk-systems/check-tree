@@ -31,19 +31,26 @@ Bring the owner: what holds, what should change, the order, each with its source
 Never ask them to assess a plan you have not validated.
 
 ## 4. The tree
-- Run `check-tree init <program>` if no tree exists.
-- Dispatch the `check-planner` agent with the program name, the objective (verbatim), and the validation file.
-- Set `"validation": "docs/plans/<program>-validation.md"` in the tree.
-- For every step whose defining test does not exist, a different agent writes that test first; it must fail on
-  today's code for the right reason.
-- Dispatch `check-evaluator` on the draft. Fix what it finds. Repeat until it passes or the remaining findings
-  are questions only the owner can answer.
+The session-start message tells you where the `check-tree` command line is installed; use that full path.
+Follow "Order of commits" in `docs/method.md`.
+- Run `check-tree init <program>` if no tree exists. Commit the validation file and `.check-tree/config.json`.
+- If the place a user meets the outcome does not exist yet (no page, no email service), ask the owner what the
+  objective will be measured against for now. That goes in the objective check's `proven_with`.
+- For every step whose defining test does not exist, a different agent writes that test first. Commit the tests;
+  that commit replaces `<TESTS-COMMIT>` in the harness checks (`check-tree red-at <commit> -- <test command>`).
+- Dispatch the `check-tree:check-planner` agent with the program name, the objective (verbatim), the validation
+  file and the tests commit. Dropped steps go in `dropped`; owner questions in `open_for_the_owner`.
+- Dispatch `check-tree:check-evaluator` on the draft. Fix what it finds. Repeat until it passes or the remaining
+  findings are questions only the owner can answer. (If you cannot dispatch agents, say plainly that the
+  evaluation was not independent.)
 - `check-tree validate <program>` must print `valid`.
 
 ## 5. Approval
-Show the owner `check-tree table <program>` as `templates/owner-approval.md`: one line per check, in plain words.
-Get a yes, no or change for each line. Then:
+Show the owner `check-tree table <program> --owner`: one line per check in plain words, including what each is
+proven with. Say plainly anything narrower than their objective (for example "this proves the payment logic with
+a fake card processor, not a real pay page"). Get a yes, no or change for each line. Then:
 `check-tree approve <program> --by owner --words "<their exact words>"` and commit the tree to the base branch.
+Finally mark the old plan document as superseded by the tree (a line at its top), so no agent works from it.
 
 Tell them what they agreed to: nothing else counts as done; when a check's time runs out they decide cut,
 reshape or extend; if the pass count does not move in 7 days, the program goes back to the old way.

@@ -86,3 +86,17 @@ def test_subagents_do_not_open_pull_requests(repo):
     assert decision(hook("no_subagent_pr.py", bash(repo, "gh pr create --fill"), repo)) == "deny"
     assert hook("no_subagent_pr.py", bash(repo, "gh pr create --fill", sub=False), repo) is None
     assert hook("no_subagent_pr.py", bash(repo, "git push -u origin HEAD"), repo) is None
+
+
+def test_a_required_file_that_does_not_exist_does_not_block(repo, tmp_path):
+    (repo / "CLAUDE.md").write_text("```required-reads\ndocs/NOT-WRITTEN-YET.md\n```\n")
+    t = write_transcript(tmp_path / "s.jsonl", "x")
+    payload = {"hook_event_name": "PreToolUse", "tool_name": "Edit", "cwd": str(repo), "transcript_path": t,
+               "tool_input": {"file_path": str(repo / "x.py")}}
+    assert hook("required_reads.py", payload, repo) is None
+
+
+def test_session_start_tells_claude_where_the_command_line_is(approved):
+    out = hook("session_start.py", {"hook_event_name": "SessionStart", "cwd": str(approved)}, approved)
+    ctx = out["hookSpecificOutput"]["additionalContext"]
+    assert "bin/check-tree" in ctx and "Programs in this repo: demo" in ctx

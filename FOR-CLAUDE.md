@@ -36,10 +36,11 @@ Use the plugin's `start-here` skill if it is installed (`/check-tree:start-here`
 1. Confirm they are in Claude Code, in a git repository with at least one commit.
 2. With their yes:
    ```bash
-   claude plugin marketplace add goshawk-systems/check-tree
+   claude plugin marketplace add https://github.com/goshawk-systems/check-tree.git
    claude plugin install check-tree@check-tree
    ```
    Restart Claude Code so the hooks load.
+   After the restart, the session-start message names the command line's full path inside the plugin folder.
 3. Show the one-minute demo: `bash <plugin folder>/examples/quickstart.sh` (needs only git and Python 3.9+).
 4. Pick one real piece of work. Run `/check-tree:define` with the owner, then `/check-tree:lead` to build.
 
