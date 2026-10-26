@@ -12,5 +12,5 @@
 - [Pipeline patterns: CI that makes "done is a passing check" trustworthy](https://github.com/goshawk-systems/check-tree/blob/main/docs/pipeline-patterns.md)
 
 ## Install
-claude plugin marketplace add goshawk-systems/check-tree
+claude plugin marketplace add https://github.com/goshawk-systems/check-tree.git
 claude plugin install check-tree@check-tree

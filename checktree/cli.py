@@ -3,7 +3,8 @@
     check-tree init <program>                      write a starter tree and config
     check-tree validate <program>                  every reason the working copy's tree cannot be approved or run
     check-tree table <program> [--owner]           the tree; --owner prints the plain-words approval sheet
-    check-tree red-at <commit> -- <test command>   passes if the test FAILS at that commit for a real reason
+    check-tree red-at <commit> [--expect RE] -- <test command>
+                                                   passes if the test FAILED at that commit (not just could not run)
     check-tree approve <program> --by <who> --words "<the owner's words>" [--without-validation]
     check-tree run <program> [--check ID ...]      run checks fresh at the head where passes count
     check-tree score <program>                     the scoreboard (computed; nothing is written by hand)
@@ -28,7 +29,7 @@ from . import core
 STARTER = {
     "program": "",
     "objective": "One sentence, in the owner's words: what is true when this program is done.",
-    "areas": ["src/<ident>/**"],
+    "areas": ["<the folders this program owns, e.g. src/payments/**>"],
     "validation": "docs/plans/<program>-validation.md",
     "open_for_the_owner": [],
     "dropped": [],
@@ -121,17 +122,21 @@ def owner_sheet(tree: core.Tree) -> str:
     n = 0
     for c in core.order(tree):
         n += 1
-        line = f"{n}. Done means: {c.get('title', '')}\n   It fails when: {c.get('fails_when', '')}"
+        label = "Before building" if c.get("kind") == "harness" else "Done means"
+        line = f"{n}. {label}: {c.get('title', '')}\n   It fails when: {c.get('fails_when', '')}"
         if c.get("proven_with"):
             line += f"\n   Proven with: {c['proven_with']}"
         h = c.get("appetite_hours")
-        line += f"\n   Time budget: {h} hour{'' if h == 1 else 's'}\n   Your answer: ________"
+        line += f"\n   Time budget: {h} hour{'' if h == 1 else 's'} (an estimate: change it if you disagree)" \
+                f"\n   Your answer: ________"
         out.append(line)
     if tree.data.get("dropped"):
         out += ["", "Dropped from the plan, at your word:"] + [f"- {d}" for d in tree.data["dropped"]]
     if tree.data.get("open_for_the_owner"):
-        out += ["", "Questions only you can answer:"] + [f"- {q}" for q in tree.data["open_for_the_owner"]]
-    out += ["", "By approving you agree: nothing else counts as done; when a check runs out of time you decide to cut,",
+        out += ["", "Questions only you can answer (your answers are recorded with your approval):"]
+        out += [f"Q{i}. {q}\n    Your answer: ________" for i, q in enumerate(tree.data["open_for_the_owner"], 1)]
+    out += ["", "If any line is a no or a change, it is changed and shown to you again before you approve.",
+            "By approving you agree: nothing else counts as done; when a check runs out of time you decide to cut,",
             "reshape or extend it; if the number of passing checks does not move in 7 days, this goes back to the old",
             "way of working."]
     return "\n".join(out)
@@ -158,7 +163,7 @@ def cmd_table(a) -> int:
 
 def cmd_approve(a) -> int:
     root = _root()
-    rec = core.approve(root, a.program, a.by, a.words, a.without_validation)
+    rec = core.approve(root, a.program, a.by, a.words, a.without_validation, a.answer)
     print(f"approved {a.program} ({rec['tree_sha256'][:12]}) by {a.by}: \"{a.words}\"\n"
           f"Commit {core.tree_path(a.program)} to the base branch (with the validation file and config, if not yet "
           f"committed); it binds from there.")
@@ -212,7 +217,7 @@ def cmd_start(a) -> int:
     print(core.render_score(s, tree))
     if not s.approved:
         print("\n## Only the owner can do this first\n"
-              f"The tree is not approved ({'; '.join(s.unapproved_why)}). Show them `check-tree table {a.program}`; "
+              f"The tree is not approved ({'; '.join(s.unapproved_why)}). Show them `check-tree table {a.program} --owner`; "
               f"on their yes: `check-tree approve {a.program} --by owner --words \"<their words>\"`, then commit.")
     if s.ready:
         print("\n## Ready checks")
@@ -268,7 +273,7 @@ def cmd_red_at(a) -> int:
     cmd = args[0] if len(args) == 1 else shlex.join(args)
     if not cmd:
         sys.exit("usage: check-tree red-at <commit> -- <test command>")
-    ok, why = core.red_at(_root(), a.commit, cmd)
+    ok, why = core.red_at(_root(), a.commit, cmd, expect=a.expect)
     print(why)
     return 0 if ok else 1
 
@@ -311,11 +316,14 @@ def main(argv=None) -> int:
     sp.add_argument("--owner", action="store_true", help="the plain-words approval sheet for the owner")
     sp = sub.add_parser("red-at")
     sp.add_argument("commit")
+    sp.add_argument("--expect", help="a regular expression the failure output must contain (pins the reason)")
     sp.add_argument("cmd", nargs=argparse.REMAINDER)
     sp = sub.add_parser("approve")
     sp.add_argument("program")
     sp.add_argument("--by", required=True)
     sp.add_argument("--words", required=True)
+    sp.add_argument("--answer", action="append", default=[],
+                    help="the owner's answer to each open question, in order (repeat)")
     sp.add_argument("--without-validation", action="store_true",
                     help="approve a tree that names no plan validation file (shown on the scoreboard)")
     sp = sub.add_parser("run")

@@ -31,6 +31,8 @@ requirements the owner did not state; if the objective is ambiguous, write the a
    `test -f <test> && "$CHECK_TREE_BIN" red-at <TESTS-COMMIT> -- <test command>`. It passes only if the test
    failed, for a real reason, at the commit that added it, so it stays green after the work. Name the test in
    `frozen`. A different agent writes it than the one who will make it pass.
+   Title a harness check by what is true when it passes, which stays true after the work: "The tests that
+   define <step> exist and failed before the work started". Pin the reason with `--expect` where you can.
    The objective check carries `proven_with`: what it is measured against, in plain words. Steps the owner
    dropped go in `dropped`. If several checks change the same files, chain them with `needs`.
 3. **Every check can fail.** A command that cannot fail (`true`, `echo ...`) is not a check. If you cannot state
@@ -40,4 +42,4 @@ requirements the owner did not state; if the objective is ambiguous, write the a
 5. **Small and honest appetites.** If a check needs more than a day, split it.
 6. **Every check is on the path to the objective.** If you cannot say how passing it moves the objective, drop it.
 7. Run `check-tree validate <program>` until it prints `valid`. Then stop and return the tree's path, the table
-   (`check-tree table <program>`), and your open questions. Do not approve anything; only the owner approves.
+   (`check-tree table <program> --owner`), and your open questions. Do not approve anything; only the owner approves.

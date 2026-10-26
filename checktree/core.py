@@ -204,6 +204,11 @@ def file_hash_at(root: pathlib.Path, ref: Optional[str], rel: str) -> Optional[s
     return hashlib.sha256(raw).hexdigest() if raw is not None else None
 
 
+def tracked_files(root: pathlib.Path, ref: Optional[str]) -> list[str]:
+    code, out = git(root, "ls-tree", "-r", "--name-only", ref) if ref else git(root, "ls-files")
+    return out.splitlines() if code == 0 else []
+
+
 def validate(tree: Tree, root: pathlib.Path, ref: Optional[str] = None) -> list[str]:
     """Every reason the tree cannot be approved or run. Empty means valid."""
     p: list[str] = []
@@ -214,6 +219,14 @@ def validate(tree: Tree, root: pathlib.Path, ref: Optional[str] = None) -> list[
         p.append("no `objective`: one sentence, in the owner's words")
     if not d.get("areas"):
         p.append("no `areas`: the file patterns this program owns")
+    if str(d.get("objective", "")).startswith("One sentence, in the owner's words"):
+        p.append("`objective` is still the starter text: write the owner's sentence, verbatim")
+    tracked = tracked_files(root, ref)
+    for pattern in d.get("areas", []):
+        if "<" in pattern or not any(fnmatch.fnmatch(f, pattern) or fnmatch.fnmatch(f, pattern.rstrip("/") + "/*")
+                                     for f in tracked):
+            p.append(f"`areas` pattern {pattern!r} matches no file in the repo: name the folders this program "
+                     f"really owns, or it protects nothing")
     if d.get("validation") and file_hash_at(root, ref, d["validation"]) is None:
         p.append(f"`validation` names {d['validation']}, which does not exist" + (f" at {ref}" if ref else ""))
     ids = [c.get("id") for c in tree.checks]
@@ -291,7 +304,8 @@ def approval_state(tree: Tree, root: pathlib.Path, ref: Optional[str]) -> tuple[
     return (not why), why
 
 
-def approve(root: pathlib.Path, program: str, by: str, words: str, without_validation: bool = False) -> dict:
+def approve(root: pathlib.Path, program: str, by: str, words: str, without_validation: bool = False,
+            answers: Optional[list] = None) -> dict:
     """Record the owner's approval in the working copy. It binds once committed to the base ref.
 
     The method validates the plan before the owner judges it (docs/method.md, step 3). A tree must name its
@@ -306,6 +320,12 @@ def approve(root: pathlib.Path, program: str, by: str, words: str, without_valid
     if not words.strip():
         raise SystemExit("--words is required: the owner's own words approving this tree")
     validated = bool(tree.data.get("validation"))
+    questions = tree.data.get("open_for_the_owner") or []
+    answers = [a for a in (answers or []) if a.strip()]
+    if questions and len(answers) < len(questions):
+        raise SystemExit(f"the tree has {len(questions)} question(s) only the owner can answer and "
+                         f"{len(answers)} answer(s) were given. Record each with --answer \"<their words>\", "
+                         f"in order:\n  " + "\n  ".join(questions))
     if not validated and not without_validation:
         raise SystemExit("this tree names no `validation` file. Validate the plan first (templates/plan-validation.md, "
                          "docs/method.md step 3) and set \"validation\" in the tree, or approve with "
@@ -317,6 +337,7 @@ def approve(root: pathlib.Path, program: str, by: str, words: str, without_valid
         "tree_sha256": tree_hash(tree.data),
         "frozen": {f: file_hash_at(root, None, f) for f in frozen_files(tree)},
         "plan_validated": validated,
+        "answers": [{"question": q, "answer": a} for q, a in zip(questions, answers)],
     }
     (root / tree_path(program)).write_text(json.dumps(tree.data, indent=2, ensure_ascii=False) + "\n")
     return tree.data["approved"]
@@ -388,9 +409,15 @@ NOT_A_REAL_FAILURE = re.compile(
 PKG_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
-def red_at(root: pathlib.Path, commit: str, cmd: str, timeout: int = 1800) -> tuple[bool, str]:
-    """Does `cmd` fail, for a real reason, at `commit`? The defining-test harness check: run against the commit
-    that added the tests (before any product work), so it stays green after the work is done."""
+def red_at(root: pathlib.Path, commit: str, cmd: str, timeout: int = 1800,
+           expect: Optional[str] = None) -> tuple[bool, str]:
+    """Does `cmd` fail at `commit`, and not merely because it cannot run? The defining-test harness check: it runs
+    against the commit that added the tests (before any product work), so it stays green after the work is done.
+
+    By itself it rejects only failures that show the test could not run (a missing file, import or syntax error).
+    It cannot tell a test that fails on the missing behaviour from one that fails on, say, a wrong function
+    signature. To pin the reason, pass `expect`: a regular expression the failure output must contain, such as
+    the assertion message the test prints when the behaviour is missing."""
     sha = head_of(root, commit)
     if not sha:
         return False, f"commit {commit!r} not found"
@@ -411,7 +438,11 @@ def red_at(root: pathlib.Path, commit: str, cmd: str, timeout: int = 1800) -> tu
     if bad:
         return False, (f"the test fails at {sha[:10]} only because it cannot run ({bad.group(0)}); "
                        f"a defining test must fail on a missing behaviour, not a missing file:\n" + tail(output, 15))
-    return True, f"fails at {sha[:10]} for a real reason:\n" + tail(output, 8)
+    if expect and not re.search(expect, output):
+        return False, (f"the test fails at {sha[:10]}, but not with the expected reason ({expect!r}):\n"
+                       + tail(output, 15))
+    reason = f" with {expect!r}" if expect else " (reason not pinned: add --expect to pin it)"
+    return True, f"fails at {sha[:10]}{reason}:\n" + tail(output, 8)
 
 
 def order(tree: Tree) -> list[dict]:

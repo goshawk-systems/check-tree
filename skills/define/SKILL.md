@@ -31,7 +31,7 @@ Bring the owner: what holds, what should change, the order, each with its source
 Never ask them to assess a plan you have not validated.
 
 ## 4. The tree
-The session-start message tells you where the `check-tree` command line is installed; use that full path.
+The session-start message tells you where the `check-tree` command line is installed; use that full path. If you do not see that note (for example right after installing, before a restart), the plugin is at `~/.claude/plugins/cache/check-tree/check-tree/<version>/` (or under `$CLAUDE_CONFIG_DIR` if set): `ls ~/.claude/plugins/cache/check-tree/check-tree/*/bin/check-tree`. The docs and templates named here are in that plugin folder.
 Follow "Order of commits" in `docs/method.md`.
 - Run `check-tree init <program>` if no tree exists. Commit the validation file and `.check-tree/config.json`.
 - If the place a user meets the outcome does not exist yet (no page, no email service), ask the owner what the
@@ -44,12 +44,18 @@ Follow "Order of commits" in `docs/method.md`.
   findings are questions only the owner can answer. (If you cannot dispatch agents, say plainly that the
   evaluation was not independent.)
 - `check-tree validate <program>` must print `valid`.
+- If one session has to play several roles (test author, planner, evaluator), tell the owner plainly and write
+  it in the validation file. Independence is what catches the mistakes; when you can, run the evaluator as a
+  separate agent or a separate session.
 
 ## 5. Approval
 Show the owner `check-tree table <program> --owner`: one line per check in plain words, including what each is
 proven with. Say plainly anything narrower than their objective (for example "this proves the payment logic with
 a fake card processor, not a real pay page"). Get a yes, no or change for each line. Then:
-`check-tree approve <program> --by owner --words "<their exact words>"` and commit the tree to the base branch.
+If any line is a no or a change, change the tree and show the sheet again. Record their answer to each open
+question in order:
+`check-tree approve <program> --by owner --words "<their exact words>" --answer "<answer to Q1>" ...`
+and commit the tree to the base branch.
 Finally mark the old plan document as superseded by the tree (a line at its top), so no agent works from it.
 
 Tell them what they agreed to: nothing else counts as done; when a check's time runs out they decide cut,

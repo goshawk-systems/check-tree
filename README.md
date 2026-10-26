@@ -94,6 +94,7 @@ claude plugin install check-tree@check-tree
 Or inside Claude Code: `/plugin marketplace add goshawk-systems/check-tree`, then `/plugin install check-tree@check-tree`.
 
 After installing, restart Claude Code; each session then starts with a note giving the command line's full path.
+If you do not see that note (for example right after installing, before a restart), the plugin is at `~/.claude/plugins/cache/check-tree/check-tree/<version>/` (or under `$CLAUDE_CONFIG_DIR` if set): `ls ~/.claude/plugins/cache/check-tree/check-tree/*/bin/check-tree`.
 The command line has no dependencies. You can also clone the repo and put `bin/` on your `PATH`:
 
 ```bash
@@ -106,7 +107,7 @@ git clone https://github.com/goshawk-systems/check-tree && export PATH="$PWD/che
 check-tree init payments            # a starter tree and .check-tree/config.json
 $EDITOR .check-tree/programs/payments/checks.json
 check-tree validate payments        # every reason it cannot be approved yet
-check-tree table payments           # what the owner reads before approving
+check-tree table payments --owner   # the plain-words sheet the owner reads before approving
 check-tree approve payments --by owner --words "yes, this is what done means"
 git add .check-tree && git commit -m "payments: approved check tree"
 check-tree run payments             # score it at the head of main

@@ -14,7 +14,7 @@ Work through `templates/lead-checklist.md`.
 Run `check-tree start <program>`. That page is your whole briefing: the job, the score, ready checks with the
 plan's words, what only the owner can do, work waiting to land. There is no handoff to read and you write none.
 
-If the tree is not approved, stop: bring the owner `check-tree table <program>` and the define session's
+If the tree is not approved, stop: bring the owner `check-tree table <program> --owner` and the define session's
 validation. Nothing is dispatched on an unapproved tree.
 
 ## Each round

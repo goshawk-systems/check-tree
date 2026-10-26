@@ -41,7 +41,9 @@ and instruction files stay short. This method puts those together.
    agent writes it first, and it is committed before any product work. Its harness check uses
    `check-tree red-at <that commit> -- <the test command>`: it passes only if the test FAILED at that commit for a
    real reason (not a missing file or import). Because it looks at that fixed commit, it stays green after the
-   work is done. If the place a user meets the outcome does not exist yet (no web page, no email service), ask
+   work is done. To pin the reason, add `--expect "<text the failure must contain>"`, such as the assertion
+   message the test prints when the behaviour is missing. Several defining tests: one harness check per test
+   file, or several `red-at` runs joined with `&&` in one check. If the place a user meets the outcome does not exist yet (no web page, no email service), ask
    the owner what the objective will be measured against for now, and write it in the check's `proven_with`
    (for example "a fake card processor in tests"). The owner sees it before approving.
 6. **The planner drafts the check tree** from the validated plan (`check-planner`). Every check carries the plan
@@ -56,9 +58,11 @@ and instruction files stay short. This method puts those together.
    working from the old document.
 
 ### Order of commits
-1. The validation file and `.check-tree/config.json`.
+1. The validation file, `.check-tree/config.json` and the `.gitignore` lines `init` adds.
 2. The defining tests (they fail now). Note this commit: it is `<TESTS-COMMIT>` in the harness checks.
-3. The tree, with `<TESTS-COMMIT>` replaced; `check-tree validate` until `valid`.
+3. The tree, with `<TESTS-COMMIT>` replaced and `areas` set to the folders this program really owns;
+   `check-tree validate` until `valid`. If the tests are amended later, commit them and update `<TESTS-COMMIT>`
+   to the new commit (the tree then needs the owner's approval again).
 4. `check-tree approve ...`, then commit the tree again (it now carries the approval). From here it binds.
 
 Checklist: `templates/define-checklist.md`.

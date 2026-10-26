@@ -28,5 +28,6 @@ a faster way to build the wrong thing.
 - [ ] `check-tree validate <program>` prints `valid`.
 
 ## Approval (templates/owner-approval.md)
-- [ ] The owner read `check-tree table <program>` and said yes or no to each check in plain words.
+- [ ] The owner read `check-tree table <program> --owner` and said yes or no to each line in plain words.
+- [ ] Any no or change: the tree was changed and shown again. Open questions answered (`--answer`).
 - [ ] `check-tree approve <program> --by owner --words "<their words>"`, committed to the base branch.

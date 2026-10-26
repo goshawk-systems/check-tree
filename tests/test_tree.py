@@ -183,3 +183,37 @@ def test_the_card_is_shareable_and_shows_progress(approved):
     assert "Goal reached." in out and "- the acceptance test passes" in out
     for internal in ("h-test", "frozen", "/Users/", ".check-tree"):
         assert internal not in out, internal
+
+
+def test_red_at_can_pin_the_reason(repo):
+    first = sh(repo, "git", "rev-list", "--max-parents=0", "HEAD").stdout.strip()
+    cmd = "python3 -m pytest -q -p no:cacheprovider tests/test_add.py"
+    ok, why = core.red_at(repo, first, cmd, expect=r"assert -1 == 5")
+    assert ok, why
+    ok, why = core.red_at(repo, first, cmd, expect=r"ConnectionError")
+    assert not ok and "not with the expected reason" in why
+
+
+def test_areas_must_own_real_files_and_the_objective_must_be_real(repo):
+    t = core.load_tree(repo, "demo")
+    t.data["areas"] = ["src/payments/**"]
+    t.data["objective"] = "One sentence, in the owner's words: what is true when this program is done."
+    problems = core.validate(t, repo)
+    assert any("matches no file" in p for p in problems)
+    assert any("starter text" in p for p in problems)
+
+
+def test_open_questions_need_the_owners_answers(repo):
+    path = repo / core.tree_path("demo")
+    data = json.loads(path.read_text())
+    data["open_for_the_owner"] = ["When do we plan the real email service?"]
+    path.write_text(json.dumps(data))
+    p = cli(repo, "approve", "demo", "--by", "owner", "--words", "yes")
+    assert p.returncode != 0 and "--answer" in (p.stderr + p.stdout)
+    p = cli(repo, "approve", "demo", "--by", "owner", "--words", "yes", "--answer", "In December, after launch.")
+    assert p.returncode == 0, p.stderr
+    rec = json.loads(path.read_text())["approved"]
+    assert rec["answers"] == [{"question": "When do we plan the real email service?",
+                               "answer": "In December, after launch."}]
+    sheet = cli(repo, "table", "demo", "--owner").stdout
+    assert "Before building:" in sheet and "an estimate" in sheet
