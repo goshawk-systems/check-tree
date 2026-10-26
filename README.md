@@ -95,6 +95,9 @@ claude plugin install check-tree@check-tree
 
 Or inside Claude Code: `/plugin marketplace add goshawk-systems/check-tree`, then `/plugin install check-tree@check-tree`.
 
+The three guides are also standard Agent Skills, so other agent tools that read skills can use the method:
+`npx skills add goshawk-systems/check-tree`. The enforcement (the hooks) needs the Claude Code plugin.
+
 After installing, restart Claude Code; each session then starts with a note giving the command line's full path.
 If you do not see that note (for example right after installing, before a restart), find it with `CT=$(ls "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/check-tree/check-tree/*/bin/check-tree | tail -1)` (then use `"$CT"`; set `CLAUDE_CONFIG_DIR` first if Claude Code uses a custom config folder).
 The command line has no dependencies. You can also clone the repo and put `bin/` on your `PATH`:
