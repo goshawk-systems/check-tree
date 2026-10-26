@@ -105,6 +105,8 @@ git clone https://github.com/goshawk-systems/check-tree && export PATH="$PWD/che
 
 ```bash
 check-tree init payments            # a starter tree and .check-tree/config.json
+# validate the plan (docs/method.md), commit it, write and COMMIT the defining tests, then put that
+# commit in the tree in place of <TESTS-COMMIT>
 $EDITOR .check-tree/programs/payments/checks.json
 check-tree validate payments        # every reason it cannot be approved yet
 check-tree table payments --owner   # the plain-words sheet the owner reads before approving

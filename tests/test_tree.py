@@ -267,3 +267,26 @@ def test_nothing_counts_while_the_tree_is_not_approved(approved):
     s = core.score(approved, "demo")
     assert s.passing == 0 and not s.objective_passes and not s.approved
     assert "Nothing counts" in core.render_score(s, core.load_tree(approved, "demo", "main"))
+
+
+def test_a_new_test_side_file_on_main_cancels_the_approval(approved):
+    core.run_checks(approved, "demo")
+    assert core.score(approved, "demo").passing == 1
+    (approved / "tests" / "conftest.py").write_text("# changes what the tests run against\n")
+    sh(approved, "git", "add", "tests/conftest.py")
+    sh(approved, "git", "commit", "-q", "-m", "a helper straight onto main")
+    core.run_checks(approved, "demo")
+    s = core.score(approved, "demo")
+    assert not s.approved and s.passing == 0
+    assert any("tests/conftest.py" in w for w in s.unapproved_why)
+    assert "uncounted" in core.render_score(s, core.load_tree(approved, "demo", "main"))
+
+
+def test_discard_removes_a_rejected_builders_work(approved, tmp_path):
+    from test_loop_hooks import bind
+    wt, _ = bind(approved, tmp_path)
+    (wt / "notes.txt").write_text("rejected work\n")
+    sh(wt, "git", "add", "notes.txt")
+    sh(wt, "git", "commit", "-q", "-m", "rejected")
+    out = cli(approved, "discard", "demo", "obj").stdout
+    assert "discarded" in out and not wt.exists()

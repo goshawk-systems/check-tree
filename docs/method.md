@@ -52,6 +52,8 @@ and instruction files stay short. This method puts those together.
    test failing for the right reason cannot cover another failing for the wrong one.
    Write tests a builder cannot game: check every computed result for at least two different inputs (a
    hard-coded answer then fails), and assert on the behaviour the user sees, not on internal details.
+   A step the old plan called done gets its own test too, inside the objective check, so it cannot quietly
+   break. Approval pins every file under the test folders (`test_paths`), not only the named tests.
    Before approval, show the tests can pass: an honest reference version, written in a scratch copy and
    never committed, passes them all. A test nothing can pass is as useless as one everything passes.
    Pin the error as it is raised (exception name and message), never a word alone or an alternative like

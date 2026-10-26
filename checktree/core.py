@@ -288,6 +288,19 @@ def validate(tree: Tree, root: pathlib.Path, ref: Optional[str] = None) -> list[
     return p
 
 
+def test_side_files(tree: Tree, root: pathlib.Path, ref: Optional[str]) -> dict[str, str]:
+    """Every tracked file under the tree's `test_paths` (default: tests/**), with its hash. Approval pins them
+    all, so nothing can change what the tests run against without the owner approving again."""
+    patterns = tree.data.get("test_paths") or ["tests/**"]
+    out = {}
+    for f in tracked_files(root, ref):
+        if any(fnmatch.fnmatch(f, g) or fnmatch.fnmatch(f, g.rstrip("/") + "/*") for g in patterns):
+            if "__pycache__" in f:
+                continue
+            out[f] = file_hash_at(root, ref, f)
+    return out
+
+
 def approval_state(tree: Tree, root: pathlib.Path, ref: Optional[str]) -> tuple[bool, list[str]]:
     """(approved, reasons it is not). Approval = the tree's hash and every frozen file's hash, as recorded."""
     a = tree.data.get("approved") or {}
@@ -303,6 +316,18 @@ def approval_state(tree: Tree, root: pathlib.Path, ref: Optional[str]) -> tuple[
             why.append(f"frozen file {f} was added after approval")
         elif pinned[f] != h:
             why.append(f"frozen file {f} changed since approval")
+    if "test_files" in a:
+        now_files = test_side_files(tree, root, ref)
+        added = sorted(set(now_files) - set(a["test_files"]))
+        gone = sorted(set(a["test_files"]) - set(now_files))
+        edited = sorted(f for f in now_files if f in a["test_files"] and a["test_files"][f] != now_files[f]
+                        and f not in pinned)
+        if added:
+            why.append(f"test-side file(s) added since approval: {', '.join(added[:5])}")
+        if gone:
+            why.append(f"test-side file(s) removed since approval: {', '.join(gone[:5])}")
+        if edited:
+            why.append(f"test-side file(s) changed since approval: {', '.join(edited[:5])}")
     return (not why), why
 
 
@@ -339,6 +364,7 @@ def approve(root: pathlib.Path, program: str, by: str, words: str, without_valid
         "tree_sha256": tree_hash(tree.data),
         "frozen": {f: file_hash_at(root, None, f) for f in frozen_files(tree)},
         "plan_validated": validated,
+        "test_files": test_side_files(tree, root, None),
         "answers": [{"question": q, "answer": a} for q, a in zip(questions, answers)],
     }
     (root / tree_path(program)).write_text(json.dumps(tree.data, indent=2, ensure_ascii=False) + "\n")
@@ -623,7 +649,8 @@ def render_score(s: Score, tree: Tree) -> str:
     for c in order(tree):
         flag = " (ready)" if c["id"] in s.ready else ""
         flag += " (OVER APPETITE)" if c["id"] in s.over_appetite else ""
-        lines.append(f"  [{mark[s.status[c['id']]]:>7}] {c['kind']:<9} {c['id']}{flag}: {c.get('title', '')}")
+        shown = mark[s.status[c["id"]]] if s.approved else "uncounted"
+        lines.append(f"  [{shown:>9}] {c['kind']:<9} {c['id']}{flag}: {c.get('title', '')}")
     return "\n".join(lines)
 
 
@@ -734,6 +761,21 @@ def clean_worktrees(root: pathlib.Path, program: str, older_than_hours: float = 
         git(root, "branch", "-D", branch)
         report.append(f"removed {wt.name} ({'landed' if landed else 'abandoned with no work'})")
     return report
+
+
+def discard_worktrees(root: pathlib.Path, program: str, check_id: str) -> list[str]:
+    """Remove every builder worktree and branch for one check, landed or not. For work the lead has rejected."""
+    report = []
+    base = root / WORKTREES_DIR
+    for wt in sorted(base.glob(f"{program}__{check_id}__*")) if base.is_dir() else []:
+        _, branch = git(wt, "rev-parse", "--abbrev-ref", "HEAD")
+        git(root, "worktree", "remove", "--force", str(wt))
+        if branch and branch != "HEAD":
+            git(root, "branch", "-D", branch)
+        report.append(f"discarded {wt.name} ({branch})")
+    git(root, "worktree", "prune")
+    progress(root, program, f"{check_id}: builder work discarded by the lead", check=check_id)
+    return report or [f"no worktrees for {program}/{check_id}"]
 
 
 def owner_of(root: pathlib.Path, rel_path: str, trees: list[Tree]) -> Optional[Tree]:

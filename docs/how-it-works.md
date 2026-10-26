@@ -47,6 +47,7 @@
 | `open_for_the_owner` | Questions only the owner can answer. Shown on the approval sheet. |
 | `independence` | Tree-level. Who wrote the defining tests, who drafted the checks and who evaluated them, in plain words. Shown at the top of the owner's sheet ("not stated" if missing). |
 | `commits_product_to` | Tree-level. A plain-words list of what the tests decide about the product. Shown on the owner's sheet. |
+| `test_paths` | Tree-level, default `["tests/**"]`. Every file there is pinned by the approval: adding, removing or changing one cancels it, so nothing changes what the tests run against without the owner. |
 | `may_change` | Per check. Extra paths, beyond the program's `areas`, that a builder on this check may change. |
 | `validation` | Path of the plan-validation file. Approval requires it (or `--without-validation`, which the scoreboard shows). |
 | `approved` | Written by `check-tree approve`: who, their words, when, the tree's hash and each frozen file's hash. |
@@ -74,6 +75,7 @@ happens to sit in. A session opened in a checkout a day behind still reads today
 | `brief <program> <check>` | The brief a builder gets for one check. |
 | `land <program> <check>` | Merges the latest passing builder branch for that check into the integration branch (fast-forward after bringing the builder up to date). |
 | `card <program> [--days 7]` | A short summary to share: passing count now and N days ago, whether the goal is reached, what newly passes. No internals. |
+| `discard <program> <check>` | Removes every builder worktree and branch for one check, unlanded work included. For work the lead rejected. |
 | `clean <program> [--hours N]` | Removes builder worktrees that were landed, or that never got a commit and are older than N hours (default 24). A worktree with uncommitted or unlanded work is always kept. |
 | `progress <program> "<line>"` | Adds a line to the program's progress log. |
 | `list` | Every program and its pass count. |
