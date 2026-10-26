@@ -217,3 +217,18 @@ def test_open_questions_need_the_owners_answers(repo):
                                "answer": "In December, after launch."}]
     sheet = cli(repo, "table", "demo", "--owner").stdout
     assert "Before building:" in sheet and "an estimate" in sheet
+
+
+def test_red_at_command_line_reads_expect_before_the_separator(repo):
+    first = sh(repo, "git", "rev-list", "--max-parents=0", "HEAD").stdout.strip()
+    test = ["python3", "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests/test_add.py"]
+    ok = cli(repo, "red-at", first, "--expect", "assert -1 == 5", "--", *test)
+    assert ok.returncode == 0, ok.stdout + ok.stderr
+    wrong = cli(repo, "red-at", first, "--expect", "ConnectionError", "--", *test)
+    assert wrong.returncode == 1 and "not with the expected reason" in wrong.stdout
+
+
+def test_a_shell_usage_error_is_never_a_real_failure(repo):
+    first = sh(repo, "git", "rev-list", "--max-parents=0", "HEAD").stdout.strip()
+    ok, why = core.red_at(repo, first, "--expect MISSING -- python3 -c 'pass'")
+    assert not ok and "cannot run" in why, why

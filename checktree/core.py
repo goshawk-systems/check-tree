@@ -405,7 +405,8 @@ def tail(text: str, lines: int = 40) -> str:
 NOT_A_REAL_FAILURE = re.compile(
     r"ModuleNotFoundError|ImportError|SyntaxError|IndentationError|collected 0 items|no tests ran|"
     r"ERROR collecting|file or directory not found|command not found|No such file or directory|"
-    r"can't open file|unrecognized arguments")
+    r"can't open file|unrecognized arguments|invalid option|illegal option|^usage:|\busage: |"
+    r"No module named|not recognized as|Permission denied", re.M)
 PKG_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 

@@ -269,11 +269,24 @@ def cmd_land(a) -> int:
 
 def cmd_red_at(a) -> int:
     import shlex
-    args = a.cmd[1:] if a.cmd and a.cmd[0] == "--" else a.cmd
+    args, expect = list(a.cmd), a.expect
+    if "--" in args:  # options may sit before the `--` in either order: red-at C --expect X -- cmd
+        cut = args.index("--")
+        head, args = args[:cut], args[cut + 1:]
+        while head:
+            opt = head.pop(0)
+            if opt == "--expect" and head:
+                expect = head.pop(0)
+            elif opt.startswith("--expect="):
+                expect = opt.split("=", 1)[1]
+            else:
+                sys.exit(f"red-at: unexpected {opt!r} before `--` (only --expect goes there)")
+    elif args and args[0].startswith("--expect"):
+        sys.exit("red-at: put `--` between the options and the test command")
     cmd = args[0] if len(args) == 1 else shlex.join(args)
     if not cmd:
         sys.exit("usage: check-tree red-at <commit> -- <test command>")
-    ok, why = core.red_at(_root(), a.commit, cmd, expect=a.expect)
+    ok, why = core.red_at(_root(), a.commit, cmd, expect=expect)
     print(why)
     return 0 if ok else 1
 

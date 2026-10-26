@@ -43,7 +43,11 @@ and instruction files stay short. This method puts those together.
    real reason (not a missing file or import). Because it looks at that fixed commit, it stays green after the
    work is done. To pin the reason, add `--expect "<text the failure must contain>"`, such as the assertion
    message the test prints when the behaviour is missing. Several defining tests: one harness check per test
-   file, or several `red-at` runs joined with `&&` in one check. If the place a user meets the outcome does not exist yet (no web page, no email service), ask
+   file, or several `red-at` runs joined with `&&` in one check.
+   When the code a test needs does not exist yet, an import error would be rejected as "could not run". Make the
+   test fail on purpose instead, with a marker the harness can pin, for example in Python
+   `assert hasattr(invoices, "pay_invoice"), "MISSING: invoices.pay_invoice"`, and then
+   `red-at <commit> --expect "MISSING|AssertionError" -- <test command>`. If the place a user meets the outcome does not exist yet (no web page, no email service), ask
    the owner what the objective will be measured against for now, and write it in the check's `proven_with`
    (for example "a fake card processor in tests"). The owner sees it before approving.
 6. **The planner drafts the check tree** from the validated plan (`check-planner`). Every check carries the plan

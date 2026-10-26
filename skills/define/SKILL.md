@@ -31,9 +31,11 @@ Bring the owner: what holds, what should change, the order, each with its source
 Never ask them to assess a plan you have not validated.
 
 ## 4. The tree
-The session-start message tells you where the `check-tree` command line is installed; use that full path. If you do not see that note (for example right after installing, before a restart), the plugin is at `~/.claude/plugins/cache/check-tree/check-tree/<version>/` (or under `$CLAUDE_CONFIG_DIR` if set): `ls ~/.claude/plugins/cache/check-tree/check-tree/*/bin/check-tree`. The docs and templates named here are in that plugin folder.
+The session-start message tells you where the `check-tree` command line is installed; use that full path. If you do not see that note (for example right after installing, before a restart), find it with `ls "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/check-tree/check-tree/*/bin/check-tree`. The docs and templates named here are in that plugin folder.
 Follow "Order of commits" in `docs/method.md`.
 - Run `check-tree init <program>` if no tree exists. Commit the validation file and `.check-tree/config.json`.
+- Set `areas` to the product folders this program changes (for example `src/invoices/**`), not the tests and not
+  the whole repo. Builders change those files; everyone else is kept out of them.
 - If the place a user meets the outcome does not exist yet (no page, no email service), ask the owner what the
   objective will be measured against for now. That goes in the objective check's `proven_with`.
 - For every step whose defining test does not exist, a different agent writes that test first. Commit the tests;

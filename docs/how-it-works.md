@@ -61,7 +61,7 @@ happens to sit in. A session opened in a checkout a day behind still reads today
 | `init <program>` | Writes a starter tree, `.check-tree/config.json`, and ignores the local state folders. |
 | `validate <program>` | Every reason the working copy's tree cannot be approved or run. |
 | `table <program> [--owner]` | The tree with ids and the hash; `--owner` prints the plain-words approval sheet. |
-| `red-at <commit> -- <command>` | Passes if the command FAILS at that commit for a real reason (not a missing file, import or syntax error). The harness check for a defining test: it stays green after the work is done. |
+| `red-at <commit> [--expect RE] -- <command>` | Passes if the command FAILS at that commit and not merely because it could not run (a missing file, import, syntax or usage error). `--expect` pins the reason: the failure output must contain it. The harness check for a defining test: it stays green after the work is done. |
 | `approve <program> --by --words` | Records the approval in the working copy. It binds once committed to the base branch. |
 | `run <program> [--check ID]` | Runs checks in dependency order, in a fresh detached worktree at the head of `counts_on`, and records each result with the commit it ran at. |
 | `score <program>` | The scoreboard: results recorded for the current head only; anything else is `not run`. Shows ready checks, over-appetite checks and `STALLED`. |
