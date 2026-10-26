@@ -59,6 +59,8 @@ them green, and the hooks make that the only way to finish.
 2. **The owner approves it once**, in their own words. The approval pins the tree's hash and every frozen file.
    Editing either unapproves it, so an agent cannot quietly weaken a test or extend its own budget.
 3. **Done is computed.** `check-tree run` runs the checks in a fresh worktree at the head of the base branch.
+   The headline counts product checks; the checks that only prove the tests exist are shown apart, so the
+   score is not inflated before any work is done.
    The scoreboard is the runner's output. A result from an older commit counts as not run. A program whose
    pass count has not moved in three days shows `STALLED`.
 4. **A builder gets one check.** A dispatch whose prompt says `Check: <program>/<id>` is refused unless the tree

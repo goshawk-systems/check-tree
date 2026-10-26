@@ -22,7 +22,8 @@ requirements the owner did not state; if the objective is ambiguous, write the a
   when it passes, in plain words), `run` (a shell command; exit 0 = pass), `fails_when` (what a failure means),
   `needs` (ids that must pass first), `frozen` (the test files that define it), `appetite_hours` (the time you
   would bet on it), and `plan_text` (the existing plan's own words for this step, when there is one).
-- `open_for_the_owner`: questions only the owner can answer.
+- `open_for_the_owner`: questions only the owner can answer, as plain sentences without numbers (the sheet
+  numbers them).
 
 ## Rules
 1. **Exactly one objective check**, measured at the consumer: the way a real user or caller meets the outcome

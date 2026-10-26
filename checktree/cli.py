@@ -3,7 +3,7 @@
     check-tree init <program>                      write a starter tree and config
     check-tree validate <program>                  every reason the working copy's tree cannot be approved or run
     check-tree table <program> [--owner]           the tree; --owner prints the plain-words approval sheet
-    check-tree red-at <commit> [--expect RE] -- <test command>
+    check-tree red-at <commit> [--expect TEXT | --expect-re RE] -- <test command>
                                                    passes if the test FAILED at that commit (not just could not run)
     check-tree approve <program> --by <who> --words "<the owner's words>" [--without-validation]
     check-tree run <program> [--check ID ...]      run checks fresh at the head where passes count
@@ -124,9 +124,18 @@ def owner_sheet(tree: core.Tree) -> str:
            f"How this was put together: {checked}", "",
            "Read each line and answer yes, no, or change it, in your own words.", ""]
     n = 0
-    for c in core.order(tree):
+    harness = [c for c in core.order(tree) if c.get("kind") == "harness"]
+    if harness:
         n += 1
-        label = "Before building" if c.get("kind") == "harness" else "Done means"
+        out.append(f"{n}. Before building: the tests that define the work exist, and each one failed for the "
+                   f"right reason before the work started ({len(harness)} check{'s' if len(harness) != 1 else ''})."
+                   f"\n   It fails when: a test is missing, passed before the work (so it proves nothing), or failed "
+                   f"only because it could not run.\n   Your answer: ________")
+    for c in core.order(tree):
+        if c.get("kind") == "harness":
+            continue
+        n += 1
+        label = "Done means"
         line = f"{n}. {label}: {c.get('title', '')}\n   It fails when: {c.get('fails_when', '')}"
         if c.get("plan_text"):
             line += f"\n   From the plan: {c['plan_text']}"
@@ -191,6 +200,10 @@ def cmd_run(a) -> int:
         if r["status"] == "fail":
             failed += 1
             print("    " + r.get("output_tail", "").replace("\n", "\n    "))
+        elif r["status"] == "pass" and "on the expected error:" in r.get("output_tail", ""):
+            for line in r["output_tail"].splitlines():
+                if "on the expected error:" in line:
+                    print("    " + line.strip())
     tree, _ = _binding(root, a.program)
     print()
     print(core.render_score(core.score(root, a.program, do_fetch=False), tree))
@@ -278,24 +291,25 @@ def cmd_land(a) -> int:
 
 def cmd_red_at(a) -> int:
     import shlex
-    args, expect = list(a.cmd), a.expect
+    args, expect, regex = list(a.cmd), a.expect or a.expect_re, bool(a.expect_re)
     if "--" in args:  # options may sit before the `--` in either order: red-at C --expect X -- cmd
         cut = args.index("--")
         head, args = args[:cut], args[cut + 1:]
         while head:
             opt = head.pop(0)
-            if opt == "--expect" and head:
-                expect = head.pop(0)
-            elif opt.startswith("--expect="):
-                expect = opt.split("=", 1)[1]
+            if opt in ("--expect", "--expect-re") and head:
+                expect, regex = head.pop(0), opt == "--expect-re"
+            elif opt.startswith("--expect=") or opt.startswith("--expect-re="):
+                key, expect = opt.split("=", 1)
+                regex = key == "--expect-re"
             else:
-                sys.exit(f"red-at: unexpected {opt!r} before `--` (only --expect goes there)")
+                sys.exit(f"red-at: unexpected {opt!r} before `--` (only --expect or --expect-re go there)")
     elif args and args[0].startswith("--expect"):
         sys.exit("red-at: put `--` between the options and the test command")
     cmd = args[0] if len(args) == 1 else shlex.join(args)
     if not cmd:
         sys.exit("usage: check-tree red-at <commit> -- <test command>")
-    ok, why = core.red_at(_root(), a.commit, cmd, expect=expect)
+    ok, why = core.red_at(_root(), a.commit, cmd, expect=expect, regex=regex)
     print(why)
     return 0 if ok else 1
 
@@ -344,7 +358,8 @@ def main(argv=None) -> int:
     sp.add_argument("--owner", action="store_true", help="the plain-words approval sheet for the owner")
     sp = sub.add_parser("red-at")
     sp.add_argument("commit")
-    sp.add_argument("--expect", help="a regular expression the failure output must contain (pins the reason)")
+    sp.add_argument("--expect", help="text an error line must contain, exactly as written (pins the reason)")
+    sp.add_argument("--expect-re", help="the same, as a regular expression")
     sp.add_argument("cmd", nargs=argparse.REMAINDER)
     sp = sub.add_parser("approve")
     sp.add_argument("program")

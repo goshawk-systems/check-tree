@@ -179,7 +179,7 @@ def test_the_card_is_shareable_and_shows_progress(approved):
     sh(approved, "git", "commit", "-q", "-am", "fix add")
     core.run_checks(approved, "demo")
     out = cli(approved, "card", "demo").stdout
-    assert "demo: 0 -> 2 of 2 checks passing in the last 7 days" in out, out
+    assert "demo: 1 of 1 product checks passing; all checks 0 -> 2 of 2 in the last 7 days" in out, out
     assert "Goal reached." in out and "- the acceptance test passes" in out
     for internal in ("h-test", "frozen", "/Users/", ".check-tree"):
         assert internal not in out, internal
@@ -249,7 +249,7 @@ def test_a_pin_that_only_matches_echoed_source_does_not_count(tmp_path):
     assert not ok, why
     ok, why = core.red_at(r, "HEAD", cmd, expect="AssertionError: MISSING")
     assert not ok, why
-    ok, why = core.red_at(r, "HEAD", cmd, expect=r"assert \(1 \+ 1\) == 3")
+    ok, why = core.red_at(r, "HEAD", cmd, expect="assert (1 + 1) == 3")
     assert ok and "assert (1 + 1) == 3" in why, why
 
 
@@ -290,3 +290,17 @@ def test_discard_removes_a_rejected_builders_work(approved, tmp_path):
     sh(wt, "git", "commit", "-q", "-m", "rejected")
     out = cli(approved, "discard", "demo", "obj").stdout
     assert "discarded" in out and not wt.exists()
+
+
+def test_expect_is_plain_text_and_expect_re_is_a_pattern(repo):
+    first = sh(repo, "git", "rev-list", "--max-parents=0", "HEAD").stdout.strip()
+    cmd = "python3 -m pytest -q -p no:cacheprovider tests/test_add.py"
+    assert core.red_at(repo, first, cmd, expect="assert -1 == 5")[0]
+    assert core.red_at(repo, first, cmd, expect=r"assert -\d == 5", regex=True)[0]
+    assert not core.red_at(repo, first, cmd, expect=r"assert -\d == 5")[0]  # literal text, not a pattern
+
+
+def test_the_headline_counts_product_checks_not_test_setup(approved):
+    core.run_checks(approved, "demo")
+    line = core.render_score(core.score(approved, "demo"), core.load_tree(approved, "demo", "main")).splitlines()[0]
+    assert line.startswith("demo: 0 of 1 product checks pass (1/2 including test setup)"), line

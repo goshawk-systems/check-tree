@@ -27,6 +27,7 @@ a faster way to build the wrong thing.
 - [ ] Every computed result is tested with at least two different inputs; each test pinned with `red-at` on its own.
 - [ ] An honest reference version (scratch copy, never committed) passes all the tests.
 - [ ] `check-evaluator` attacked it; every finding fixed or written up as an open question.
+      (One session playing several roles: say so in the tree's `independence`; it shows at the top of the sheet.)
 - [ ] `check-tree validate <program>` prints `valid`.
 
 ## Approval (templates/owner-approval.md)

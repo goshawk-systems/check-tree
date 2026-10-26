@@ -441,13 +441,14 @@ SOURCE_ECHO = re.compile(r"^(>\s|\s{4,}\S|\s*\d+\s*[|│])")
 
 
 def red_at(root: pathlib.Path, commit: str, cmd: str, timeout: int = 1800,
-           expect: Optional[str] = None) -> tuple[bool, str]:
+           expect: Optional[str] = None, regex: bool = False) -> tuple[bool, str]:
     """Does `cmd` fail at `commit`, and not merely because it cannot run? The defining-test harness check: it runs
     against the commit that added the tests (before any product work), so it stays green after the work is done.
 
     By itself it rejects only failures that show the test could not run (a missing file, import or syntax error).
     It cannot tell a test that fails on the missing behaviour from one that fails on, say, a wrong function
-    signature. To pin the reason, pass `expect`: a regular expression the failure output must contain, such as
+    signature. To pin the reason, pass `expect`: text an error line must contain (a regular expression when
+    `regex` is true), such as
     the assertion message the test prints when the behaviour is missing."""
     sha = head_of(root, commit)
     if not sha:
@@ -471,7 +472,7 @@ def red_at(root: pathlib.Path, commit: str, cmd: str, timeout: int = 1800,
                        f"a defining test must fail on a missing behaviour, not a missing file:\n" + tail(output, 15))
     matched = None
     if expect:
-        rx = re.compile(expect)
+        rx = re.compile(expect if regex else re.escape(expect))
         # Test runners echo the failing source line (pytest prints it after ">" or indented). A pin that only
         # matches that echo would pass for a test that fails for any reason, so echoed source never counts.
         for line in output.splitlines():
@@ -637,9 +638,18 @@ def score(root: pathlib.Path, program: str, do_fetch: bool = True) -> Score:
                  bool(ok and obj and status.get(obj) == "pass"))
 
 
+def product_progress(s: Score, tree: Tree) -> tuple[int, int]:
+    """(passing, total) over the checks that measure the product: harness checks (the tests exist) excluded."""
+    product = [c["id"] for c in tree.checks if c.get("kind") != "harness"]
+    done = sum(1 for cid in product if s.approved and s.status.get(cid) == "pass")
+    return done, len(product)
+
+
 def render_score(s: Score, tree: Tree) -> str:
     mark = {"pass": "PASS", "fail": "FAIL", "blocked": "blocked", "not run": "not run"}
-    lines = [f"{s.program}: {s.passing}/{s.total} checks pass at {s.ref} {str(s.commit)[:10]}"
+    done, total = product_progress(s, tree)
+    lines = [f"{s.program}: {done} of {total} product checks pass ({s.passing}/{s.total} including test setup) "
+             f"at {s.ref} {str(s.commit)[:10]}"
              + ("  STALLED" if s.stalled else "")
              + ("" if s.approved else "  (tree NOT approved: " + "; ".join(s.unapproved_why)
                 + ". Nothing counts until the owner approves it again)")
@@ -682,10 +692,12 @@ def card(root: pathlib.Path, program: str, days: int = 7) -> str:
             recent = False
         if cid in titles and s.status.get(cid) == "pass" and recent:
             newly.append(titles[cid])
+    done, total = product_progress(s, tree)
     if before is not None and before != s.passing:
-        head = f"{program}: {before} -> {s.passing} of {s.total} checks passing in the last {days} days"
+        head = (f"{program}: {done} of {total} product checks passing; all checks {before} -> {s.passing} of "
+                f"{s.total} in the last {days} days")
     else:
-        head = f"{program}: {s.passing} of {s.total} checks passing"
+        head = f"{program}: {done} of {total} product checks passing"
     lines = [head, f"Goal: {tree.objective}", "Goal reached." if s.objective_passes else "Goal not reached yet."]
     if newly:
         lines.append("Newly passing:")

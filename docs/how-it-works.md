@@ -67,7 +67,7 @@ happens to sit in. A session opened in a checkout a day behind still reads today
 | `init <program>` | Writes a starter tree, `.check-tree/config.json`, and ignores the local state folders. |
 | `validate <program>` | Every reason the working copy's tree cannot be approved or run. |
 | `table <program> [--owner]` | The tree with ids and the hash; `--owner` prints the plain-words approval sheet. |
-| `red-at <commit> [--expect RE] -- <command>` | Passes if the command FAILS at that commit and not merely because it could not run (a missing file, import, syntax or usage error). `--expect` pins the reason: the failure output must contain it. The harness check for a defining test: it stays green after the work is done. |
+| `red-at <commit> [--expect TEXT \| --expect-re RE] -- <command>` | Passes if the command FAILS at that commit and not merely because it could not run (a missing file, import, syntax or usage error). `--expect` pins the reason: an error line must contain that exact text (`--expect-re` takes a regular expression). Lines that only echo the test's source never count, and `run` prints the line that matched. The harness check for a defining test: it stays green after the work is done. |
 | `approve <program> --by --words` | Records the approval in the working copy. It binds once committed to the base branch. |
 | `run <program> [--check ID]` | Runs checks in dependency order, in a fresh detached worktree at the head of `counts_on`, and records each result with the commit it ran at. A builder's own branch is scored by the stop hook in its worktree; it reaches the scoreboard once landed and merged. Nothing counts while the tree is not approved. |
 | `score <program>` | The scoreboard: results recorded for the current head only; anything else is `not run`. Shows ready checks, over-appetite checks and `STALLED`. |
@@ -75,7 +75,7 @@ happens to sit in. A session opened in a checkout a day behind still reads today
 | `brief <program> <check>` | The brief a builder gets for one check. |
 | `land <program> <check>` | Merges the latest passing builder branch for that check into the integration branch (fast-forward after bringing the builder up to date). |
 | `card <program> [--days 7]` | A short summary to share: passing count now and N days ago, whether the goal is reached, what newly passes. No internals. |
-| `discard <program> <check>` | Removes every builder worktree and branch for one check, unlanded work included. For work the lead rejected. |
+| `discard <program> <check>` | Removes every builder worktree and branch for one check, unlanded work included. For work the lead rejected. The integration branch stays, and the check's time budget keeps counting from its first dispatch. |
 | `clean <program> [--hours N]` | Removes builder worktrees that were landed, or that never got a commit and are older than N hours (default 24). A worktree with uncommitted or unlanded work is always kept. |
 | `progress <program> "<line>"` | Adds a line to the program's progress log. |
 | `list` | Every program and its pass count. |
