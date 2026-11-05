@@ -157,3 +157,50 @@ def run(main: Callable[[dict], None]) -> None:
 
 
 SHELL_SPLIT = re.compile(r"\s*(?:&&|\|\||;|\n)\s*")
+
+
+# ── per-repo settings for the pipeline hooks: .check-tree/repo.json at the project root ──
+
+REPO_CONFIG_PATH = ".check-tree/repo.json"
+REPO_DEFAULTS = {
+    "prod": {
+        "deploy_workflow_patterns": ["deploy-prod*", "*production*"],
+        "db_patterns": [],
+        "aws_profiles": [],
+        "aws_accounts": [],
+    },
+    "shared_checkouts": [],
+    "max_pr_files": 50,
+    "process_prefixes": ["PROC"],
+    "freeze_allowed_items": [],
+    "secrets": {"extra_name_patterns": []},
+}
+
+
+def _typed(default, value):
+    """A value from repo.json only if it has the default's type; otherwise the default (a typo must not open a gate)."""
+    return value if type(value) is type(default) else default
+
+
+def repo_config(data: dict) -> dict:
+    """`.check-tree/repo.json` merged over REPO_DEFAULTS. Looked up in the session's own checkout first, then the
+    main checkout. A missing file, bad JSON or a wrongly typed key gives the default."""
+    cfg = json.loads(json.dumps(REPO_DEFAULTS))
+    cwd = data.get("cwd") or os.getcwd()
+    code, top = core.git(pathlib.Path(cwd), "rev-parse", "--show-toplevel")
+    for base in ([pathlib.Path(top)] if code == 0 and top else []) + [root_for(data)]:
+        p = base / REPO_CONFIG_PATH if base else None
+        if p and p.is_file():
+            try:
+                raw = json.loads(p.read_text())
+            except (OSError, json.JSONDecodeError):
+                return cfg
+            for k, v in (raw.items() if isinstance(raw, dict) else []):
+                if k not in cfg:
+                    continue
+                if isinstance(cfg[k], dict) and isinstance(v, dict):
+                    cfg[k].update({kk: _typed(cfg[k][kk], vv) for kk, vv in v.items() if kk in cfg[k]})
+                else:
+                    cfg[k] = _typed(cfg[k], v)
+            return cfg
+    return cfg

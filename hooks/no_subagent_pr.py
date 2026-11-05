@@ -6,17 +6,16 @@ once opened five pull requests for one objective before anything was reviewed.
 """
 from __future__ import annotations
 
-import re
-
 import _common as C
-
-PR_CREATE = re.compile(r"\bgh\s+pr\s+create\b|\bgh\s+api\b[^\n]*\bpulls\b[^\n]*(-X\s*POST|--method\s+POST)")
+import _shell as S
 
 
 def main(data: dict) -> None:
     if data.get("tool_name") != "Bash" or not C.in_subagent(data):
         return
-    if PR_CREATE.search((data.get("tool_input") or {}).get("command", "")):
+    # Read as commands, not text: catches `cd x && gh pr create`, env prefixes, `bash -c`, and a `gh api .../pulls`
+    # POST with fields and no -X (gh then POSTs). pr_open_rules.py reads the same parsed call.
+    if S.pr_open_calls((data.get("tool_input") or {}).get("command", ""), data.get("cwd") or ""):
         C.deny("check-tree: subagents do not open pull requests. Push your branch and return; the lead opens "
                "one pull request for the milestone.")
 
