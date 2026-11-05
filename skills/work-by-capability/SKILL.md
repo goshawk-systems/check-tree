@@ -22,8 +22,13 @@ before ("a patient can reschedule from the text message", "the API returns the n
   test tool, one for the fixture, one for the fix.
 - A step that is too large to land as one PR is too large: cut it to a smaller capability, not to smaller
   layers of the same one.
-- Open as a draft. Iterate locally. Mark it ready once, when the capability works. Every push to a ready PR
-  starts CI and costs money (see `spend`).
+- Open as a draft. Iterate locally. A draft runs no checks, so when the capability works run them on the draft:
+  `gh workflow run pr-check.yml -f pr=<n>` (it runs every job on the PR's head and posts `all-green` on that commit).
+  Mark the PR ready once, after `all-green` is green on its current head: `gh pr ready` is refused (by
+  `pr_open_rules.py`) until it is, and a new push starts over. Marking it ready then reuses that result: the jobs do
+  not run twice. A ready PR whose `pr-check` fails on a real test or gate failure is sent back to draft with a
+  comment naming the failed jobs and tests (`recover.yml`); a cancelled run or a lost runner never does that.
+  Every push to a ready PR starts CI and costs money (see `spend`).
 
 ## A check passing proves the step; it is not the step
 Do not write code to turn a check green. Build the capability, then see the check go green. If the check passes

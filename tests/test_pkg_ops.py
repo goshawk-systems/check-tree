@@ -46,6 +46,12 @@ class FakeGh:
         self.posts.append((path, body))
         return {}
 
+    gql = ()
+
+    def graphql(self, query, variables=None):
+        self.gql = (*self.gql, (query, variables))
+        return {}
+
 
 def job(conclusion, steps=(), **kw):
     return {"id": 1, "name": "tests", "conclusion": conclusion, "steps": [dict(s) for s in steps], **kw}
@@ -399,3 +405,164 @@ def test_recover_listens_to_the_workflows_by_their_real_names():
     rec = yaml.safe_load((wf / "recover.yml").read_text())
     on = rec.get("on") or rec.get(True)
     assert set(on["workflow_run"]["workflows"]) == names, (on["workflow_run"]["workflows"], names)
+
+
+# ── a ready PR whose pr-check really failed goes back to draft ──
+
+SHA = "abcdef1234567890"
+PYTEST_LOG = """2026-11-05T10:00:00.1Z FAILED tests/test_spoof.py::test_in_captured_output - not from the summary
+2026-11-05T10:00:01.0Z =========================== short test summary info ============================
+2026-11-05T10:00:01.1Z \x1b[31mFAILED\x1b[0m tests/test_a.py::test_x - assert 1 == 2
+2026-11-05T10:00:01.2Z FAILED tests/test_b.py::test_y[1-a]
+2026-11-05T10:00:01.3Z ERROR tests/test_c.py - ImportError
+2026-11-05T10:00:01.4Z ============ 2 failed, 3 passed in 1.2s ============
+2026-11-05T10:00:02.0Z FAILED tests/test_after.py::test_late
+"""
+
+
+def prun(**kw):
+    return {"id": 10, "conclusion": "failure", "run_attempt": 1, "workflow_id": 7, "head_branch": "feature/x", "head_sha": SHA,
+            "event": "pull_request", "path": ".github/workflows/pr-check.yml", "html_url": "https://example.invalid/run/10",
+            "pull_requests": [{"number": 5}], **kw}
+
+
+def ppr(**kw):
+    return {"number": 5, "node_id": "PR_node5", "state": "open", "draft": False, "user": {"login": "sarah"},
+            "head": {"sha": SHA, "ref": "feature/x"}, **kw}
+
+
+def draft_routes(jobs, pull=None, comments=(), logs=None):
+    r = {f"/repos/{R}/actions/runs/10/jobs": {"jobs": jobs}, f"/repos/{R}/pulls/5": pull or ppr(),
+         f"/repos/{R}/issues/5/comments": list(comments), f"/repos/{R}/actions/workflows/7/runs": {"workflow_runs": []}}
+    for j in jobs:
+        r[f"/repos/{R}/actions/jobs/{j['id']}/logs"] = (logs or {}).get(j["id"], "")
+    return r
+
+
+def gate(jid, name, **kw):
+    return {"id": jid, "name": name, "conclusion": "failure", "steps": [step("Run tests", "failure")], **kw}
+
+
+def test_only_the_pytest_short_summary_names_failed_tests():
+    assert rc.short_summary_failures(PYTEST_LOG) == ["tests/test_a.py::test_x", "tests/test_b.py::test_y[1-a]"]
+    assert rc.short_summary_failures("FAILED tests/test_a.py::test_x\nno summary here") == []
+
+
+def test_a_ready_pr_whose_pr_check_failed_for_real_goes_back_to_draft_with_one_comment_naming_jobs_and_tests():
+    jobs = [gate(4, "impacted-tests (2)"), gate(5, "lint"), {"id": 6, "name": "pr-body", "conclusion": "success"}]
+    gh = FakeGh(draft_routes(jobs, logs={4: PYTEST_LOG, 5: "ruff: 3 errors"}))
+    r = rc.return_to_draft(gh, CFG, prun())
+    assert r["action"] == "draft", r
+    assert gh.gql == ((rc.CONVERT_TO_DRAFT, {"id": "PR_node5"}),)
+    (path, body), = gh.posts
+    assert path == f"/repos/{R}/issues/5/comments"
+    text = body["body"]
+    assert "`impacted-tests (2)`" in text and "`lint`" in text and "`pr-body`" not in text
+    assert "`tests/test_a.py::test_x`" in text and "`tests/test_b.py::test_y[1-a]`" in text
+    assert "test_spoof" not in text and "test_late" not in text and "test_c.py" not in text
+    assert "gh workflow run pr-check.yml -f pr=" in text and f"sha={SHA}" in text
+
+
+def test_the_comment_is_posted_once_per_head_even_when_the_pr_is_sent_back_again():
+    jobs = [gate(4, "lint")]
+    marker = f"<!-- check-tree-returned-to-draft sha={SHA} -->"
+    gh = FakeGh(draft_routes(jobs, comments=[{"body": marker + " earlier"}]))
+    assert rc.return_to_draft(gh, CFG, prun())["action"] == "draft"
+    assert gh.gql and not gh.posts
+
+
+def test_a_comment_lists_at_most_twenty_tests_and_cannot_be_broken_out_of_by_a_test_name():
+    names = [f"FAILED tests/t.py::test_{i}" for i in range(25)] + ["FAILED tests/t.py::test_`evil`"]
+    log = "=== short test summary info ===\n" + "\n".join(names) + "\n=== 26 failed ===\n"
+    gh = FakeGh(draft_routes([gate(4, "impacted-tests (1)")], logs={4: log}))
+    rc.return_to_draft(gh, CFG, prun())
+    text = gh.posts[0][1]["body"]
+    assert text.count("\n- `tests/t.py::test_") == 20 and "and 6 more" in text
+
+
+def test_a_cancelled_run_a_lost_runner_a_timeout_and_a_mixed_failure_never_send_a_pr_back():
+    lost = {"id": 4, "name": "impacted-tests (1)", "conclusion": "failure", "steps": [step("Run tests", None)]}
+    timed = {"id": 4, "name": "impacted-tests (1)", "conclusion": "cancelled", "started_at": "2026-11-05T10:00:00Z",
+             "completed_at": "2026-11-05T10:30:00Z", "steps": [step("Run tests", "cancelled")]}
+    for run_, jobs in ((prun(conclusion="cancelled"), [gate(4, "lint")]), (prun(), [lost]), (prun(), [timed]),
+                       (prun(), [gate(5, "lint"), lost]), (prun(), [lost, gate(5, "lint")]),
+                       (prun(conclusion="timed_out"), [gate(4, "lint")])):
+        gh = FakeGh(draft_routes(jobs, logs={4: "The job has exceeded the maximum execution time of 30m0s"}))
+        assert rc.return_to_draft(gh, CFG, run_)["action"] == "none" and not gh.gql and not gh.posts, (run_["conclusion"], jobs)
+
+
+@pytest.mark.parametrize("pull,run_", [
+    (ppr(draft=True), {}), (ppr(state="closed"), {}),
+    (ppr(head={"sha": "ffff000", "ref": "feature/x"}), {}),                       # the head moved on: an old run
+    (ppr(head={"sha": SHA, "ref": "mergify/merge-queue/main/pr-5"}), {}),
+    (ppr(user={"login": "dependabot[bot]"}), {}), (ppr(head={"sha": SHA, "ref": "dependabot/pip/x"}), {}),
+    (ppr(), {"head_branch": "mergify/merge-queue/main/pr-5"}),
+    (ppr(), {"event": "workflow_dispatch"}),                                      # a hand-run dispatch is not a ready PR's push
+    (ppr(), {"path": ".github/workflows/queue-suite.yml"}),
+])
+def test_a_draft_a_moved_head_the_queue_dependabot_and_other_workflows_are_left_alone(pull, run_):
+    gh = FakeGh(draft_routes([gate(4, "lint")], pull=pull))
+    assert rc.return_to_draft(gh, CFG, prun(**run_))["action"] == "none" and not gh.gql and not gh.posts
+
+
+def test_a_failed_second_attempt_is_judged_on_its_own_jobs():
+    gh = FakeGh(draft_routes([gate(4, "lint")]))
+    assert rc.decide_run(gh, prun(run_attempt=2))["action"] == "none"
+    assert rc.return_to_draft(gh, CFG, prun(run_attempt=2))["action"] == "draft"
+
+
+def test_the_fork_pr_is_found_from_the_head_sha_when_the_run_lists_no_pull_request():
+    r = draft_routes([gate(4, "lint")])
+    r[f"/repos/{R}/commits/{SHA}/pulls"] = [ppr()]
+    gh = FakeGh(r)
+    assert rc.return_to_draft(gh, CFG, prun(pull_requests=[]))["action"] == "draft"
+
+
+def test_decide_run_judges_every_failed_job_so_a_real_failure_after_a_lost_one_is_seen():
+    lost = {"id": 4, "name": "a", "conclusion": "failure", "steps": [step("Run tests", None)]}
+    gh = FakeGh(routes([gate(5, "b"), lost]))
+    r = rc.decide_run(gh, run())
+    assert r["action"] == "none" and [v["verdict"] for v in r["jobs"]] == ["real", "lost"] and not gh.posts
+
+
+def test_the_run_event_re_runs_a_lost_failure_and_never_sends_it_to_draft():
+    jobs = [{"id": 4, "name": "impacted-tests (1)", "conclusion": "failure", "steps": [step("Run tests", None)]}]
+    gh = FakeGh(draft_routes(jobs))
+    d = rc.decide_run(gh, prun())
+    assert d["action"] == "rerun" and not gh.gql
+    assert rc.return_to_draft(gh, CFG, prun(), d["jobs"])["action"] == "none" and not gh.gql
+
+
+def test_the_sweep_sends_back_a_pr_whose_run_event_was_dropped_and_leaves_a_lost_run_to_the_re_run():
+    now = NOW
+    gh = FakeGh({**draft_routes([gate(4, "lint")]),
+                 f"/repos/{R}/actions/workflows/pr-check.yml/runs": {"workflow_runs": [prun()]},
+                 f"/repos/{R}/actions/workflows/queue-suite.yml/runs": {"workflow_runs": []}})
+    out = rc.sweep_recent_runs(gh, CFG, now)
+    assert any(o["action"] == "draft" for o in out) and len(gh.gql) == 1
+
+
+def test_the_real_gh_graphql_call_sends_the_query_and_variables_on_stdin_and_raises_on_errors(monkeypatch):
+    import subprocess
+    seen = {}
+
+    def fake_run(args, input=None, **kw):
+        seen["args"], seen["input"] = args, json.loads(input)
+        return types.SimpleNamespace(returncode=0, stdout=json.dumps(seen.get("reply", {"data": {"ok": 1}})), stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    gh = Gh("o/r", 5)
+    assert gh.graphql("mutation{x}", {"id": "A"}) == {"ok": 1}
+    assert seen["args"] == ["gh", "api", "graphql", "--input", "-"] and seen["input"] == {"query": "mutation{x}", "variables": {"id": "A"}}
+    seen["reply"] = {"errors": [{"message": "no"}]}
+    with pytest.raises(RuntimeError):
+        gh.graphql("mutation{x}")
+
+
+def test_recover_may_comment_and_convert_a_pull_request_to_draft():
+    import yaml
+    wf = PKG / "templates" / "repo" / ".github" / "workflows"
+    rec = yaml.safe_load((wf / "recover.yml").read_text())
+    assert rec["permissions"]["pull-requests"] == "write" and rec["permissions"]["issues"] == "write"
+    on = rec.get("on") or rec.get(True)
+    assert "pr-check" in on["workflow_run"]["workflows"] and on["workflow_run"]["types"] == ["completed"]

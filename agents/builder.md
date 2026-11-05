@@ -19,7 +19,7 @@ much you changed.
 - Work only in your own worktree or clone. Never edit another session's checkout.
 - Surgical edits, one validated step at a time. Search for the same defect elsewhere (siblings) and list
   what you leave.
-- The fixes, tests and harness for your step go in your one PR. Open it as a draft; mark it ready once.
+- The fixes, tests and harness for your step go in your one PR. Open it as a draft; run its checks on the draft with `gh workflow run pr-check.yml -f pr=<n>`; mark it ready once, when `all-green` is green on its head (`gh pr ready` is refused until then).
 - Never weaken a check: no changed frozen test, lowered threshold, skip, or suppression. If a test is wrong,
   leave it red and report why with evidence.
 - Use the project's approved way for each recurring thing (database session, config, logging). Do not invent

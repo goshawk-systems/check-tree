@@ -53,6 +53,9 @@ def test_pr_check_triggers_and_cancels_per_pr_but_never_a_queue_draft():
     assert set(t["pull_request"]["types"]) == {"opened", "synchronize", "reopened", "ready_for_review"}
     c = doc["concurrency"]
     assert "pull_request.number" in c["group"] and "merge-queue" in str(c["cancel-in-progress"])
+    # a dispatch for a pull request shares that pull request's group, so a newer push cancels a stale dispatch
+    assert "inputs.pr" in c["group"]
+    assert t["workflow_dispatch"]["inputs"]["pr"]["required"] is True
 
 
 def test_queue_suite_triggers_and_posts_queue_suite():
@@ -125,7 +128,8 @@ def if_of(job):
 
 def event(draft, head):
     return {"github": {"event_name": "pull_request", "head_ref": head,
-                       "event": {"pull_request": {"draft": draft, "number": 7}}}}
+                       "event": {"pull_request": {"draft": draft, "number": 7}}},
+            "needs": {"plan": {"outputs": {"run": "true", "reuse": "false"}}}}
 
 
 PR_CHECK_JOBS = wf("pr-check.yml")["jobs"]
@@ -149,7 +153,7 @@ def test_the_expression_evaluator_is_not_vacuous():
 def test_all_green_needs_every_other_job_and_requires_success_of_each():
     jobs = PR_CHECK_JOBS
     assert set(jobs["all-green"]["needs"]) == set(jobs) - {"all-green"}
-    assert jobs["all-green"]["name"] == "all-green"
+    assert gh_value(if_of({"if": jobs["all-green"]["name"]}), event(False, "feature/x")) == "all-green"
     assert "always()" in jobs["all-green"]["if"]
     script = jobs["all-green"]["steps"][-1]["run"]
     assert '.result == "success"' in script          # a skipped or cancelled job is not a pass
@@ -517,3 +521,237 @@ def test_a_description_edit_re_runs_the_description_jobs_one_attempt_at_a_time()
     assert "$api/runs/$id/jobs" in loop, "each job id is read again from the latest attempt"
     p = subprocess.run(["bash", "-n"], input=script, capture_output=True, text=True)
     assert p.returncode == 0, p.stderr
+
+
+# ── a ready PR must have passed pr-check on its current head (PROC-159) ──
+
+def scenario(kind):
+    """The context of one kind of pr-check run. A draft push runs nothing: `plan` is skipped, so it has no outputs."""
+    pr = {"number": 7, "draft": kind in ("draft push", "queue draft")}
+    head = QUEUE + "main/pr-7" if kind == "queue draft" else "feature/x"
+    ctx = {"github": {"event_name": "pull_request", "head_ref": head, "event": {"action": "opened", "pull_request": pr}},
+           "inputs": {}, "needs": {"plan": {"outputs": {"run": "true", "reuse": "false"}}}}
+    if kind == "draft push":
+        ctx["needs"]["plan"]["outputs"] = {}
+    if kind == "ready_for_review on a green head":
+        ctx["github"]["event"]["action"] = "ready_for_review"
+        ctx["needs"]["plan"]["outputs"] = {"run": "false", "reuse": "true"}
+    if kind == "dispatch":
+        ctx = {"github": {"event_name": "workflow_dispatch", "head_ref": "", "event": {}}, "inputs": {"pr": "7"},
+               "needs": {"plan": {"outputs": {"run": "true", "reuse": "false"}}}}
+    return ctx
+
+
+KINDS = ["draft push", "ready PR", "queue draft", "ready_for_review on a green head", "dispatch"]
+
+
+def runs(job, ctx):
+    return bool(gh_value(if_of(job), ctx))
+
+
+def shown_name(job_id, job, ctx):
+    name = str(job.get("name", job_id))
+    return gh_value(if_of({"if": name}), ctx) if "${{" in name else name
+
+
+@pytest.mark.parametrize("kind", KINDS)
+def test_no_job_is_named_all_green_unless_it_runs_and_none_is_when_it_sits_on_another_commit(kind):
+    """GitHub counts a skipped required check as success, which could mask a failing one (see pr-body-recheck.yml): a job named
+    `all-green` that is skipped, or that sits on the default branch's commit for a dispatch, would do exactly that."""
+    ctx = scenario(kind)
+    for job_id, job in PR_CHECK_JOBS.items():
+        name = shown_name(job_id, job, ctx)
+        if name == "all-green":
+            assert runs(job, ctx), f"{job_id} is skipped on a {kind} but would be named all-green"
+            assert kind != "dispatch", "a dispatch's own jobs sit on the default branch's commit, not the PR's"
+
+
+def test_the_aggregate_is_all_green_on_a_ready_pr_a_queue_draft_and_a_green_head_marked_ready():
+    for kind in ("ready PR", "queue draft", "ready_for_review on a green head"):
+        ctx = scenario(kind)
+        job = PR_CHECK_JOBS["all-green"]
+        assert shown_name("all-green", job, ctx) == "all-green" and runs(job, ctx), kind
+    assert shown_name("all-green", PR_CHECK_JOBS["all-green"], scenario("dispatch")) == "all-green (dispatch)"
+    assert shown_name("all-green", PR_CHECK_JOBS["all-green"], scenario("draft push")) != "all-green"
+
+
+def test_a_dispatch_runs_every_job_on_the_named_pr_as_if_it_were_ready():
+    ctx = scenario("dispatch")
+    assert all(runs(job, ctx) for job in PR_CHECK_JOBS.values())
+
+
+def test_a_ready_for_review_on_a_green_head_runs_no_test_job_again_but_still_posts_all_green():
+    ctx = scenario("ready_for_review on a green head")
+    ran = {j for j, job in PR_CHECK_JOBS.items() if runs(job, ctx)}
+    assert ran == {"plan", "master-health-onto-pr", "all-green"}, ran
+
+
+def test_a_draft_push_runs_nothing_and_costs_no_runner():
+    ctx = scenario("draft push")
+    assert [j for j, job in PR_CHECK_JOBS.items() if runs(job, ctx)] == []
+
+
+def test_every_job_that_reads_the_pull_request_takes_it_from_plan_not_from_the_event():
+    """A dispatch has no pull_request payload: a job reading github.base_ref or the event's head/body would be empty there."""
+    text = (WF / "pr-check.yml").read_text()
+    body = text[text.index("\njobs:"):]
+    for needle in ("github.base_ref", "pull_request.head.sha", "pull_request.base.ref", "pull_request.body"):
+        offenders = [ln for ln in body.splitlines() if needle in ln and "EVENT_" not in ln]
+        assert not offenders, (needle, offenders)
+
+
+# the scripts of the plan job and the aggregate, run for real against a fake `gh`
+
+FAKE_GH = r"""#!%(py)s
+import json, os, subprocess, sys
+a = sys.argv[1:]
+routes = json.load(open(os.environ["FAKE_ROUTES"]))
+if "-X" in a or "--method" in a:
+    open(os.environ["FAKE_POSTS"], "a").write(json.dumps(a) + "\n")
+    sys.exit(1 if os.environ.get("FAKE_POST_FAILS") else 0)
+path = a[1]
+body = routes.get(path.split("?")[0] + ("?" + path.split("?")[1] if "?" in path else ""))
+if body is None:
+    body = routes.get(path.split("?")[0])
+if body is None:
+    sys.stderr.write("unrouted " + path + "\n"); sys.exit(1)
+if "--jq" in a:
+    sys.stdout.write(subprocess.run(["jq", "-r", a[a.index("--jq") + 1]], input=json.dumps(body), capture_output=True, text=True).stdout)
+else:
+    sys.stdout.write(json.dumps(body))
+"""
+
+
+@pytest.fixture
+def fake_gh(tmp_path):
+    b = tmp_path / "bin"
+    b.mkdir()
+    g = b / "gh"
+    g.write_text(FAKE_GH % {"py": sys.executable})
+    g.chmod(0o755)
+    routes, posts, out = tmp_path / "routes.json", tmp_path / "posts.log", tmp_path / "out.txt"
+    routes.write_text("{}")
+    posts.write_text("")
+    out.write_text("")
+
+    def run(script, env, routes_json=None):
+        routes.write_text(json.dumps(routes_json or {}))
+        posts.write_text("")
+        out.write_text("")
+        e = {"PATH": f"{b}:/usr/bin:/bin:/opt/homebrew/bin", "FAKE_ROUTES": str(routes), "FAKE_POSTS": str(posts),
+             "GITHUB_OUTPUT": str(out), "GITHUB_REPOSITORY": "o/r", "RUNNER_TEMP": str(tmp_path), **env}
+        p = subprocess.run(["bash", "-c", script], capture_output=True, text=True, env=e)
+        outputs = dict(ln.split("=", 1) for ln in out.read_text().splitlines() if "=" in ln)
+        return p, outputs, [json.loads(ln) for ln in posts.read_text().splitlines()]
+
+    return run
+
+
+def step_script(job, step_id=None):
+    for st in PR_CHECK_JOBS[job]["steps"]:
+        if "run" in st and (step_id is None or st.get("id") == step_id):
+            return st["run"]
+    raise AssertionError(job)
+
+
+PLAN = step_script("plan", "plan")
+CHECKS = "repos/o/r/commits/h1/check-runs?check_name=all-green&per_page=100"
+
+
+def plan_env(event="pull_request", action="opened", pr="7", head_ref="feature/x"):
+    return {"REPO": "o/r", "EVENT": event, "ACTION": action, "PR_NUMBER": pr, "EVENT_HEAD": "h1", "EVENT_BASE": "main",
+            "HEAD_REF": head_ref, "GH_TOKEN": "x"}
+
+
+def green(conclusion, rid=1):
+    return {CHECKS: {"check_runs": [{"id": rid, "conclusion": conclusion}]}}
+
+
+def test_marking_ready_a_head_that_already_has_a_successful_all_green_does_not_run_the_jobs_again(fake_gh):
+    p, out, _ = fake_gh(PLAN, plan_env(action="ready_for_review"), green("success"))
+    assert p.returncode == 0, p.stderr
+    assert (out["run"], out["reuse"], out["head"], out["base"], out["ref"]) == ("false", "true", "h1", "main", "")
+
+
+@pytest.mark.parametrize("routes", [{}, green("failure"), green("skipped"), {CHECKS: {"check_runs": []}},
+                                    {CHECKS: {"check_runs": [{"id": 1, "conclusion": "success"}, {"id": 2, "conclusion": "failure"}]}}])
+def test_marking_ready_a_head_without_a_successful_latest_all_green_runs_every_job(fake_gh, routes):
+    p, out, _ = fake_gh(PLAN, plan_env(action="ready_for_review"), routes)
+    assert p.returncode == 0, p.stderr
+    assert (out["run"], out["reuse"]) == ("true", "false")
+
+
+def test_only_ready_for_review_reuses_a_green_head_and_never_the_queues_own_pull_request(fake_gh):
+    for env in (plan_env(action="synchronize"), plan_env(action="opened"),
+                plan_env(action="ready_for_review", head_ref="mergify/merge-queue/main/pr-7")):
+        p, out, _ = fake_gh(PLAN, env, green("success"))
+        assert p.returncode == 0 and (out["run"], out["reuse"]) == ("true", "false"), env
+
+
+PULL = {"state": "open", "mergeable": True, "head": {"sha": "h1", "ref": "feature/x"}, "base": {"ref": "develop"}}
+
+
+def test_a_dispatch_reads_the_pull_request_and_checks_out_its_merge_ref(fake_gh):
+    p, out, _ = fake_gh(PLAN, plan_env(event="workflow_dispatch", pr="7", head_ref=""), {"repos/o/r/pulls/7": PULL})
+    assert p.returncode == 0, p.stderr
+    assert (out["pr"], out["head"], out["base"], out["ref"], out["run"], out["reuse"]) == (
+        "7", "h1", "develop", "refs/pull/7/merge", "true", "false")
+
+
+@pytest.mark.parametrize("pr,pull", [("7; rm -rf /", PULL), ("", PULL), ("7", {**PULL, "state": "closed"}),
+                                     ("7", {**PULL, "mergeable": False}),
+                                     ("7", {**PULL, "head": {"sha": "h1", "ref": "mergify/merge-queue/main/pr-7"}})])
+def test_a_dispatch_for_something_that_is_not_an_open_mergeable_pull_request_fails_with_nothing_run(fake_gh, pr, pull):
+    p, out, _ = fake_gh(PLAN, plan_env(event="workflow_dispatch", pr=pr, head_ref=""), {"repos/o/r/pulls/7": pull})
+    assert p.returncode != 0 and "run" not in out
+
+
+ALL_GREEN = step_script("all-green")
+NEEDS_OK = {n: {"result": "success"} for n in ("plan", "lint", "secret-scan", "impacted-tests", "pr-body", "pr-size", "mergify-config",
+                                                  "master-health-onto-pr")}
+
+
+def agg_env(needs, event="pull_request", reuse="false", head="h1"):
+    return {"NEEDS": json.dumps(needs), "EVENT": event, "REUSE": reuse, "PR_NUMBER": "7", "HEAD_SHA": head, "GH_TOKEN": "x",
+            "RUN_URL": "https://example.invalid/run/1"}
+
+
+def test_the_aggregate_passes_only_when_every_job_succeeded_and_a_pull_request_event_posts_nothing(fake_gh):
+    p, _, posts = fake_gh(ALL_GREEN, agg_env(NEEDS_OK))
+    assert p.returncode == 0 and posts == []
+    for bad in ("failure", "cancelled", "skipped"):
+        p, _, posts = fake_gh(ALL_GREEN, agg_env({**NEEDS_OK, "lint": {"result": bad}}))
+        assert p.returncode != 0 and posts == [], bad
+
+
+def test_a_green_head_marked_ready_passes_with_its_jobs_skipped_but_never_over_a_failed_one(fake_gh):
+    skipped = {**NEEDS_OK, **{n: {"result": "skipped"} for n in ("lint", "secret-scan", "impacted-tests", "pr-body", "pr-size", "mergify-config")}}
+    assert fake_gh(ALL_GREEN, agg_env(skipped, reuse="true"))[0].returncode == 0
+    assert fake_gh(ALL_GREEN, agg_env(skipped, reuse="false"))[0].returncode != 0           # skipped is no pass without a reuse
+    assert fake_gh(ALL_GREEN, agg_env({**skipped, "master-health-onto-pr": {"result": "failure"}}, reuse="true"))[0].returncode != 0
+    assert fake_gh(ALL_GREEN, agg_env({**skipped, "plan": {"result": "failure"}}, reuse="true"))[0].returncode != 0
+
+
+def test_a_dispatch_posts_all_green_on_the_pr_head_with_the_real_conclusion(fake_gh):
+    cur = {"repos/o/r/pulls/7": {"head": {"sha": "h1"}}}
+    p, _, posts = fake_gh(ALL_GREEN, agg_env(NEEDS_OK, event="workflow_dispatch"), cur)
+    assert p.returncode == 0, p.stderr
+    (post,) = posts
+    assert post[post.index("-X") + 1] == "POST" and "repos/o/r/check-runs" in post
+    assert "name=all-green" in post and "head_sha=h1" in post and "conclusion=success" in post and "status=completed" in post
+    p, _, posts = fake_gh(ALL_GREEN, agg_env({**NEEDS_OK, "impacted-tests": {"result": "failure"}}, event="workflow_dispatch"), cur)
+    assert p.returncode != 0 and "conclusion=failure" in posts[0]
+
+
+def test_a_dispatch_posts_nothing_when_the_head_moved_or_the_plan_failed(fake_gh):
+    moved = {"repos/o/r/pulls/7": {"head": {"sha": "h2"}}}
+    p, _, posts = fake_gh(ALL_GREEN, agg_env(NEEDS_OK, event="workflow_dispatch"), moved)
+    assert p.returncode != 0 and posts == []
+    p, _, posts = fake_gh(ALL_GREEN, agg_env({**NEEDS_OK, "plan": {"result": "failure"}}, event="workflow_dispatch", head=""), moved)
+    assert p.returncode != 0 and posts == []
+
+
+def test_a_failed_post_fails_the_dispatch_run(fake_gh):
+    p, _, _ = fake_gh(ALL_GREEN, {**agg_env(NEEDS_OK, event="workflow_dispatch"), "FAKE_POST_FAILS": "1"},
+                      {"repos/o/r/pulls/7": {"head": {"sha": "h1"}}})
+    assert p.returncode != 0

@@ -1,9 +1,15 @@
-"""One recovery rule, and the stuck-PR alarm.
+"""One recovery rule, the return of a failed ready PR to draft, and the stuck-PR alarm.
 
 RECOVERY. One classifier (`classify_job`) decides whether a job was LOST (its runner vanished, a runner lost it at a time
 limit, its only failed step posts a status, or GitHub itself failed under it) or really FAILED. A run whose failing jobs
 were all lost is re-run ONCE (`rerun-failed-jobs`, first attempt only). A real failure is never re-run: re-running one
 hides a bug and spends the shared runner pool. A person's cancel and a newer run's cancel are never lost.
+
+RETURN TO DRAFT. A ready PR (not a draft, not the merge queue's, not Dependabot's) whose `pr-check` run FAILED on its current head, with
+every failed job a real failure (the same `classify_job`: no lost runner, no cancel, no timeout), goes back to draft (GraphQL
+`convertPullRequestToDraft`) with ONE comment per head naming the failed jobs and the test node ids from pytest's `short test summary
+info` section only. Ready means passed: the PR is marked ready again only after `gh workflow run pr-check.yml -f pr=<n>` is green on
+the new head (hooks/pr_open_rules.py). A cancelled run, a lost runner, a timeout, an old head and a PR that is already a draft are left alone.
 
 THE STUCK-PR ALARM. An open, non-draft PR whose required status is pending or missing on its head, with no run queued
 or in progress and nothing happening for 20 minutes, gets its latest run re-run once. If it is still not green 20
@@ -23,6 +29,7 @@ import re
 import sys
 
 from .common import BudgetExceeded, Gh, load_settings, now_utc, parse_time
+from .quarantine import FAILED_LINE
 
 RUNNER_LOST = re.compile(r"(?i)lost communication with the server|received a shutdown signal|runner (?:has )?(?:been )?(?:decommissioned|removed)")
 TIME_LIMIT = re.compile(r"(?i)exceeded the maximum execution time(?: of (?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?)?")
@@ -39,6 +46,13 @@ FORCE_CANCEL_GRACE_SECONDS = 240  # a job still running this long past its state
 BAD = ("failure", "cancelled", "timed_out")
 ACTIVE = ("queued", "in_progress", "waiting", "pending", "requested")
 STUCK_MINUTES = 20
+QUEUE_PREFIX = "mergify/merge-queue/"
+CONVERT_TO_DRAFT = "mutation($id:ID!){convertPullRequestToDraft(input:{pullRequestId:$id}){pullRequest{isDraft}}}"
+LOG_TIME = re.compile(r"^\d{4}-\d\d-\d\dT[\d:.]+Z\s?")
+ANSI = re.compile(r"\x1b\[[0-9;]*m")
+SUMMARY_HEADER = re.compile(r"^=+ short test summary info =+$")
+SECTION_RULE = re.compile(r"^=+ .* =+$")
+MAX_LISTED = 20
 
 
 def _limit_seconds(text: str) -> int | None:
@@ -103,20 +117,27 @@ def _jobs(gh: Gh, run_id) -> list[dict]:
     return (gh.get(f"/repos/{gh.repo}/actions/runs/{run_id}/jobs?per_page=100&filter=latest") or {}).get("jobs") or []
 
 
+def judge_jobs(gh: Gh, run: dict) -> list[dict]:
+    """Every failed, cancelled or timed-out job of a run, classified: [{job, id, conclusion, verdict (lost|real), why}]."""
+    out = []
+    for job in _jobs(gh, run["id"]):
+        if job.get("conclusion") not in BAD:
+            continue
+        v, why = classify_job(job, lambda j=job: _job_text(gh, j))
+        out.append({"job": job.get("name"), "id": job.get("id"), "conclusion": job.get("conclusion"), "verdict": v, "why": why})
+    return out
+
+
 def decide_run(gh: Gh, run: dict) -> dict:
     """Classify a completed run's jobs and re-run once when every failed job was lost. Returns {action, reason, jobs}."""
     if run.get("conclusion") not in BAD:
         return {"action": "none", "reason": f"concluded {run.get('conclusion')}"}
     if run.get("run_attempt", 1) != 1:
         return {"action": "none", "reason": f"attempt {run.get('run_attempt')}: re-run once only"}
-    verdicts = []
-    for job in _jobs(gh, run["id"]):
-        if job.get("conclusion") not in BAD:
-            continue
-        v, why = classify_job(job, lambda j=job: _job_text(gh, j))
-        verdicts.append({"job": job.get("name"), "verdict": v, "why": why})
-        if v == "real":
-            return {"action": "none", "reason": f"real failure: {job.get('name')}: {why}", "jobs": verdicts}
+    verdicts = judge_jobs(gh, run)
+    real = next((v for v in verdicts if v["verdict"] == "real"), None)
+    if real:
+        return {"action": "none", "reason": f"real failure: {real['job']}: {real['why']}", "jobs": verdicts}
     if not verdicts:
         return {"action": "none", "reason": "no failed job"}
     newer = (gh.get(f"/repos/{gh.repo}/actions/workflows/{run['workflow_id']}/runs?branch={run.get('head_branch')}&per_page=10") or {}).get("workflow_runs") or []
@@ -124,6 +145,89 @@ def decide_run(gh: Gh, run: dict) -> dict:
         return {"action": "none", "reason": "a newer run of this workflow exists on the branch", "jobs": verdicts}
     gh.post(f"/repos/{gh.repo}/actions/runs/{run['id']}/rerun-failed-jobs")
     return {"action": "rerun", "reason": "every failed job was lost", "jobs": verdicts, "run": run["id"]}
+
+
+# ── a ready PR whose pr-check really failed goes back to draft ──
+
+def short_summary_failures(log: str) -> list[str]:
+    """Test node ids from the `short test summary info` section(s) of a pytest log, and nothing else in the log."""
+    found: list[str] = []
+    inside = False
+    for raw in log.splitlines():
+        line = ANSI.sub("", LOG_TIME.sub("", raw)).strip()
+        if SUMMARY_HEADER.match(line):
+            inside = True
+        elif inside and SECTION_RULE.match(line):
+            inside = False
+        elif inside:
+            m = FAILED_LINE.match(line)
+            if m and m.group(1) not in found:
+                found.append(m.group(1))
+    return found
+
+
+def _pr_of_run(gh: Gh, run: dict) -> dict | None:
+    for p in run.get("pull_requests") or []:
+        if p.get("number"):
+            return gh.get(f"/repos/{gh.repo}/pulls/{p['number']}")
+    for p in gh.get(f"/repos/{gh.repo}/commits/{run.get('head_sha')}/pulls") or []:  # a fork's run lists no pull request
+        if p.get("state") == "open" and (p.get("head") or {}).get("sha") == run.get("head_sha"):
+            return p
+    return None
+
+
+def _draft_comment(sha: str, run: dict, verdicts: list[dict], tests: list[str]) -> str:
+    jobs = ", ".join(f"`{v['job']}`" for v in verdicts)
+    lines = [f"<!-- check-tree-returned-to-draft sha={sha} -->",
+             f"**Returned to draft: `pr-check` failed on head `{sha[:7]}`.** Failed: {jobs}."]
+    if tests:
+        shown = [t.replace("`", "") for t in tests[:MAX_LISTED]]
+        lines += ["", "Failing tests (pytest short summary):", *[f"- `{t}`" for t in shown]]
+        if len(tests) > MAX_LISTED:
+            lines.append(f"- and {len(tests) - MAX_LISTED} more")
+    lines += ["", f"Run: {run.get('html_url', '')}",
+              "Fix it on the draft, then run `gh workflow run pr-check.yml -f pr=<this number>`; mark it ready once `all-green` is green on the new head."]
+    return "\n".join(lines)
+
+
+def return_to_draft(gh: Gh, cfg: dict, run: dict, verdicts: list[dict] | None = None) -> dict:
+    """Send the run's PR back to draft when pr-check really failed on its current head. Returns {action: none|draft, reason}."""
+    def none(why: str) -> dict:
+        return {"action": "none", "reason": why, "run": run.get("id")}
+    check_file = os.path.basename(cfg["workflows"]["pr_check"])
+    if os.path.basename(str(run.get("path", ""))).split("@")[0] != check_file:
+        return none("not the pull-request check")
+    if run.get("event") != "pull_request" or str(run.get("head_branch", "")).startswith(QUEUE_PREFIX):
+        return none("not a run on a pull request's own head")
+    if run.get("conclusion") != "failure":
+        return none(f"concluded {run.get('conclusion')}: only a failure is a real failure")
+    pr = _pr_of_run(gh, run)
+    if not pr:
+        return none("no open pull request for this head")
+    login, ref = (pr.get("user") or {}).get("login", ""), (pr.get("head") or {}).get("ref", "")
+    if pr.get("state") != "open" or pr.get("draft"):
+        return none("the pull request is closed or already a draft")
+    if (pr.get("head") or {}).get("sha") != run.get("head_sha"):
+        return none("the head moved on: this run is for an old head")
+    if ref.startswith(QUEUE_PREFIX) or login == "dependabot[bot]" or ref.startswith("dependabot/"):
+        return none("the merge queue's or Dependabot's pull request")
+    verdicts = verdicts if verdicts is not None else judge_jobs(gh, run)
+    if not verdicts or any(v["verdict"] != "real" or v["conclusion"] != "failure" for v in verdicts):
+        return none("not every failed job was a real failure (a lost runner, a cancel or a timeout is never this)")
+    tests: list[str] = []
+    for v in verdicts:
+        try:
+            log = gh.get(f"/repos/{gh.repo}/actions/jobs/{v['id']}/logs")
+        except BudgetExceeded:
+            raise
+        except Exception:
+            continue
+        tests += [t for t in short_summary_failures(log) if t not in tests] if isinstance(log, str) else []
+    gh.graphql(CONVERT_TO_DRAFT, {"id": pr["node_id"]})
+    marker = f"check-tree-returned-to-draft sha={run['head_sha']}"
+    if not any(marker in (c.get("body") or "") for c in gh.get(f"/repos/{gh.repo}/issues/{pr['number']}/comments?per_page=100") or []):
+        gh.post(f"/repos/{gh.repo}/issues/{pr['number']}/comments", {"body": _draft_comment(run["head_sha"], run, verdicts, tests)})
+    return {"action": "draft", "reason": f"pr-check failed for real: {', '.join(v['job'] for v in verdicts)}", "run": run["id"], "pr": pr["number"]}
 
 
 # ── the stuck-PR alarm ──
@@ -216,8 +320,14 @@ def sweep_recent_runs(gh: Gh, cfg: dict, now: dt.datetime, hours: int = 2, per_w
         wf = os.path.basename(cfg["workflows"][key])
         runs = (gh.get(f"/repos/{gh.repo}/actions/workflows/{wf}/runs?status=completed&created=%3E{since}&per_page={per_workflow}") or {}).get("workflow_runs") or []
         for r in runs:
+            decided = {"action": "none", "reason": "not a first attempt"}
             if r.get("conclusion") in BAD and r.get("run_attempt", 1) == 1:
-                out.append({"run": r["id"], **decide_run(gh, r)})
+                decided = decide_run(gh, r)
+                out.append({"run": r["id"], **decided})
+            if key == "pr_check" and r.get("conclusion") == "failure" and decided["action"] != "rerun":
+                d = return_to_draft(gh, cfg, r, decided.get("jobs"))
+                if d["action"] == "draft":
+                    out.append({"run": r["id"], **d})
     return out
 
 
@@ -234,6 +344,9 @@ def main(argv: list[str] | None = None) -> int:
             ev = json.load(open(os.environ["GITHUB_EVENT_PATH"]))
             r = decide_run(gh, ev["workflow_run"])
             lines.append(f"run {ev['workflow_run']['id']}: {r['action']} ({r['reason']})")
+            if r["action"] != "rerun":
+                d = return_to_draft(gh, cfg, ev["workflow_run"], r.get("jobs"))
+                lines.append(f"run {ev['workflow_run']['id']}: {d['action']} ({d['reason']})")
         else:
             now = now_utc()
             for r in sweep_recent_runs(gh, cfg, now):

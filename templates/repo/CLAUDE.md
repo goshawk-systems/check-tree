@@ -42,8 +42,8 @@ Everything else is autonomous. Queue the gated command, then continue with the w
 ## Merging
 - The merge unit is a finished step of ONE capability, proven at its consumer. Not a backlog, not a milestone.
   [CI: PR file cap `max_pr_files`]
-- Open the pull request as a DRAFT. Iterate locally. Mark it ready once, when the change is done: every push
-  costs CI minutes. [CI: the workflows run on ready_for_review, not on draft pushes]
+- Open the pull request as a DRAFT. Mark it ready once, after `gh workflow run pr-check.yml -f pr=<n>` passed on its
+  head; a ready PR whose checks fail goes back to draft. [hook: pr_open_rules.py; CI: recover.yml]
 - One open pull request per work item. [CI: scripted_review.py]
 - The merge queue is the only path to `{{default_branch}}`, and it runs the full suite. Nobody merges by hand and
   nobody runs the full suite by hand to "check first". [CI: Mergify queue, required status `all-green`]

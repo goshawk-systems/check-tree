@@ -3,30 +3,109 @@
 #
 # Every job skips a draft pull request, EXCEPT the queue's own draft (head branch `mergify/merge-queue/...`): Mergify opens
 # those as drafts and they need these statuses. Settings come from `.check-tree/repo.json`; nothing here names a project.
+#
+# A PULL REQUEST IS MARKED READY ONLY AFTER ITS HEAD PASSED THIS CHECK (hooks/pr_open_rules.py refuses `gh pr ready` otherwise).
+# A draft runs nothing, so the check is run on a draft by hand: `gh workflow run pr-check.yml -f pr=<number>` (workflow_dispatch).
+# That run executes every job on the PR's merge ref, exactly as `ready_for_review` would, and POSTS `all-green` ON THE PR'S HEAD
+# through the checks API (the dispatch run itself sits on the default branch's commit, so its own aggregate job is named
+# `all-green (dispatch)`, never `all-green`). When `ready_for_review` then fires on a head that already has a successful
+# `all-green`, `plan` says `reuse`: the jobs are not run again, and `all-green` still RUNS and posts success.
+#
+# NEVER A SKIPPED JOB NAMED `all-green`: GitHub counts a skipped required check as success, which could mask a failing one
+# (see pr-body-recheck.yml). The aggregate job's name is an expression that is `all-green` only when the job runs; whenever it
+# would be skipped (a draft push) or sits on another commit (a dispatch) it is named otherwise. test_pkg_ci.py checks this
+# for every kind of event.
 name: pr-check
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('pr-check for PR #{0} (dispatch)', inputs.pr) || github.event.pull_request.title }}
 
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "Pull request number: run every job on its head, as if it were ready, and post all-green on that commit"
+        required: true
+        type: string
 
 concurrency:
-  group: pr-check-${{ github.event.pull_request.number }}
+  group: pr-check-${{ github.event.pull_request.number || inputs.pr }}
   cancel-in-progress: ${{ !startsWith(github.head_ref, 'mergify/merge-queue/') }}
 
 permissions:
   contents: read
 
 jobs:
+  # Says what this run does, so no job needs the event's own pull_request fields (a dispatch has none). Skipped for a draft push,
+  # which is why a draft costs no runner at all. Outputs: pr, head (the PR's head sha), base (its base branch), ref (what to check
+  # out: empty for a pull_request event, which checks out the merge ref by default; the merge ref for a dispatch), run (run the
+  # jobs), reuse (the head already has a successful all-green: do not run them again, only re-post).
+  plan:
+    if: ${{ github.event_name == 'workflow_dispatch' || !github.event.pull_request.draft || startsWith(github.head_ref, 'mergify/merge-queue/') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+    outputs:
+      pr: ${{ steps.plan.outputs.pr }}
+      head: ${{ steps.plan.outputs.head }}
+      base: ${{ steps.plan.outputs.base }}
+      ref: ${{ steps.plan.outputs.ref }}
+      run: ${{ steps.plan.outputs.run }}
+      reuse: ${{ steps.plan.outputs.reuse }}
+    steps:
+      - id: plan
+        name: Which pull request, which head, and has that head already passed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          ACTION: ${{ github.event.action }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr }}
+          EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
+          EVENT_BASE: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          api="repos/$REPO"
+          ref="" run=true reuse=false
+          if [ "$EVENT" = workflow_dispatch ]; then
+            [[ "$PR_NUMBER" =~ ^[0-9]+$ ]] || { echo "pr must be a pull request number, got: $PR_NUMBER" >&2; exit 1; }
+            pr_json="$(gh api "$api/pulls/$PR_NUMBER")"
+            [ "$(jq -r .state <<< "$pr_json")" = open ] || { echo "pull request #$PR_NUMBER is not open" >&2; exit 1; }
+            [ "$(jq -r .mergeable <<< "$pr_json")" != false ] || { echo "pull request #$PR_NUMBER has merge conflicts: resolve them first, as the push-triggered check needs a merge ref too" >&2; exit 1; }
+            case "$(jq -r .head.ref <<< "$pr_json")" in mergify/merge-queue/*) echo "#$PR_NUMBER is the merge queue's own pull request" >&2; exit 1;; esac
+            head="$(jq -r .head.sha <<< "$pr_json")"
+            base="$(jq -r .base.ref <<< "$pr_json")"
+            ref="refs/pull/$PR_NUMBER/merge"
+          else
+            head="$EVENT_HEAD"; base="$EVENT_BASE"
+            case "$HEAD_REF" in mergify/merge-queue/*) queue=true;; *) queue=false;; esac
+            if [ "$ACTION" = ready_for_review ] && [ "$queue" = false ]; then
+              # Marked ready on a head that already passed (a dispatch run, or an earlier push): do not pay for the jobs twice.
+              state="$(gh api "$api/commits/$head/check-runs?check_name=all-green&per_page=100" \
+                       --jq '.check_runs | sort_by(.id) | last | .conclusion // empty' || true)"
+              if [ "$state" = success ]; then run=false reuse=true; fi
+            fi
+          fi
+          { echo "pr=$PR_NUMBER"; echo "head=$head"; echo "base=$base"; echo "ref=$ref"; echo "run=$run"; echo "reuse=$reuse"; } >> "$GITHUB_OUTPUT"
+          echo "pr=$PR_NUMBER head=$head base=$base ref=${ref:-default} run=$run reuse=$reuse"
+
   lint:
-    if: ${{ !github.event.pull_request.draft || startsWith(github.head_ref, 'mergify/merge-queue/') }}
+    needs: [plan]
+    if: ${{ needs.plan.outputs.run == 'true' && (!github.event.pull_request.draft || startsWith(github.head_ref, 'mergify/merge-queue/')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+        with:
+          ref: ${{ needs.plan.outputs.ref }}
+          fetch-depth: 0
       - name: Lint the changed files
         env:
-          BASE: origin/${{ github.base_ref }}
+          BASE: origin/${{ needs.plan.outputs.base }}
           CHECK_TREE_SETUP: "1"
         run: |
           set -euo pipefail
@@ -46,15 +125,18 @@ jobs:
           bash -c "$lint \"\$@\"" _ "${files[@]}"
 
   secret-scan:
-    if: ${{ !github.event.pull_request.draft || startsWith(github.head_ref, 'mergify/merge-queue/') }}
+    needs: [plan]
+    if: ${{ needs.plan.outputs.run == 'true' && (!github.event.pull_request.draft || startsWith(github.head_ref, 'mergify/merge-queue/')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+        with:
+          ref: ${{ needs.plan.outputs.ref }}
+          fetch-depth: 0
       - name: gitleaks over the commits this change adds
         env:
-          BASE: origin/${{ github.base_ref }}
+          BASE: origin/${{ needs.plan.outputs.base }}
           GITLEAKS_VERSION: "8.18.4"
         run: |
           set -euo pipefail
@@ -63,7 +145,8 @@ jobs:
           ./gitleaks detect --source . --log-opts "${mb}..HEAD" --redact --no-banner
 
   impacted-tests:
-    if: ${{ !github.event.pull_request.draft || startsWith(github.head_ref, 'mergify/merge-queue/') }}
+    needs: [plan]
+    if: ${{ needs.plan.outputs.run == 'true' && (!github.event.pull_request.draft || startsWith(github.head_ref, 'mergify/merge-queue/')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -72,10 +155,12 @@ jobs:
         shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+        with:
+          ref: ${{ needs.plan.outputs.ref }}
+          fetch-depth: 0
       - name: The tests this change reaches, shard ${{ matrix.shard }} of 4
         env:
-          BASE: origin/${{ github.base_ref }}
+          BASE: origin/${{ needs.plan.outputs.base }}
           SHARD: ${{ matrix.shard }}
           QUEUE_DRAFT: ${{ startsWith(github.head_ref, 'mergify/merge-queue/') }}
           CHECK_TREE_SETUP: "1"
@@ -89,58 +174,78 @@ jobs:
           printf '%s\n' "${files[@]}"
           bash ci/run_tests.sh "${files[@]}"
 
+  # The description is read live from the API (never from the event, which a dispatch does not have and a re-run keeps stale).
   pr-body:
-    if: ${{ !github.event.pull_request.draft || startsWith(github.head_ref, 'mergify/merge-queue/') }}
+    needs: [plan]
+    if: ${{ needs.plan.outputs.run == 'true' && (!github.event.pull_request.draft || startsWith(github.head_ref, 'mergify/merge-queue/')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+        with:
+          ref: ${{ needs.plan.outputs.ref }}
+          fetch-depth: 0
       - name: The description names a work item, every file, every test edit, and a consumer proof
         env:
-          PR_BODY: ${{ github.event.pull_request.body }}
-          BASE: origin/${{ github.base_ref }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ needs.plan.outputs.pr }}
+          BASE: origin/${{ needs.plan.outputs.base }}
           QUEUE_DRAFT: ${{ startsWith(github.head_ref, 'mergify/merge-queue/') }}
         run: |
           set -euo pipefail
           if [ "$QUEUE_DRAFT" = "true" ]; then
             echo "queue draft: its description is Mergify's; each change's own was checked on its pull request"; exit 0
           fi
-          printf '%s' "$PR_BODY" > "$RUNNER_TEMP/body.md"
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq '.body // ""' > "$RUNNER_TEMP/body.md"
           python3 ci/check_pr_body.py --body "$RUNNER_TEMP/body.md" --base "$BASE"
 
   pr-size:
-    if: ${{ !github.event.pull_request.draft || startsWith(github.head_ref, 'mergify/merge-queue/') }}
+    needs: [plan]
+    if: ${{ needs.plan.outputs.run == 'true' && (!github.event.pull_request.draft || startsWith(github.head_ref, 'mergify/merge-queue/')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+        with:
+          ref: ${{ needs.plan.outputs.ref }}
+          fetch-depth: 0
       - name: The change is under max_pr_files
         env:
-          PR_BODY: ${{ github.event.pull_request.body }}
-          BASE: origin/${{ github.base_ref }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ needs.plan.outputs.pr }}
+          BASE: origin/${{ needs.plan.outputs.base }}
           QUEUE_DRAFT: ${{ startsWith(github.head_ref, 'mergify/merge-queue/') }}
         run: |
           set -euo pipefail
           if [ "$QUEUE_DRAFT" = "true" ]; then echo "queue draft: a batch is several changes by design"; exit 0; fi
-          printf '%s' "$PR_BODY" > "$RUNNER_TEMP/body.md"
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq '.body // ""' > "$RUNNER_TEMP/body.md"
           python3 ci/check_pr_body.py size --body "$RUNNER_TEMP/body.md" --base "$BASE"
 
   mergify-config:
-    if: ${{ !github.event.pull_request.draft || startsWith(github.head_ref, 'mergify/merge-queue/') }}
+    needs: [plan]
+    if: ${{ needs.plan.outputs.run == 'true' && (!github.event.pull_request.draft || startsWith(github.head_ref, 'mergify/merge-queue/')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.ref }}
       - name: The committed .mergify.yml is what the template and the settings render to
         run: python3 ci/render_mergify.py --check
 
   # Copies master's latest settled `master-health` verdict onto this head, so the queue can read it (Mergify reads statuses on the
   # pull request, not on the base). Its own job and a checkout of the BASE branch's scripts only: it holds `statuses: write`, and
-  # the pull request's own code must never share a job with a write token.
+  # the pull request's own code must never share a job with a write token. It also runs when `plan` says `reuse` (the jobs are not
+  # run again, but the verdict it copies is master's of NOW, and costs one short job).
   master-health-onto-pr:
-    if: ${{ !github.event.pull_request.draft || startsWith(github.head_ref, 'mergify/merge-queue/') }}
+    needs: [plan]
+    if: ${{ (needs.plan.outputs.run == 'true' || needs.plan.outputs.reuse == 'true') && (!github.event.pull_request.draft || startsWith(github.head_ref, 'mergify/merge-queue/')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -149,7 +254,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.base.ref }}
+          ref: ${{ needs.plan.outputs.base }}
           sparse-checkout: |
             ci
             .check-tree
@@ -158,8 +263,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_BRANCH: ${{ needs.plan.outputs.base }}
+          HEAD_SHA: ${{ needs.plan.outputs.head }}
           QUEUE_DRAFT: ${{ startsWith(github.head_ref, 'mergify/merge-queue/') }}
         run: |
           set -euo pipefail
@@ -172,16 +277,43 @@ jobs:
           fi
           python3 ci/master_health.py copy-to-pr --branch "$BASE_BRANCH" --sha "$HEAD_SHA"
 
+  # The aggregate. Its name is `all-green` only when it runs for a pull_request event on a head that is checked; see the header.
+  # On a dispatch it sits on the default branch's commit, so it posts the real `all-green` on the PR's head through the checks API.
+  # It never checks out or runs the PR's code: it holds `checks: write`.
   all-green:
-    name: all-green
-    if: ${{ always() && (!github.event.pull_request.draft || startsWith(github.head_ref, 'mergify/merge-queue/')) }}
-    needs: [lint, secret-scan, impacted-tests, pr-body, pr-size, mergify-config, master-health-onto-pr]
+    name: ${{ github.event_name == 'workflow_dispatch' && 'all-green (dispatch)' || ((github.event.pull_request.draft && !startsWith(github.head_ref, 'mergify/merge-queue/')) && 'all-green (draft, not run)' || 'all-green') }}
+    if: ${{ always() && (github.event_name == 'workflow_dispatch' || !github.event.pull_request.draft || startsWith(github.head_ref, 'mergify/merge-queue/')) }}
+    needs: [plan, lint, secret-scan, impacted-tests, pr-body, pr-size, mergify-config, master-health-onto-pr]
     runs-on: ubuntu-latest
     timeout-minutes: 2
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: write
     steps:
-      - name: Every job succeeded (a skipped or cancelled one is not a pass)
+      - name: Every job succeeded (a skipped or cancelled one is not a pass, unless the head already had a green all-green)
         env:
+          GH_TOKEN: ${{ github.token }}
           NEEDS: ${{ toJSON(needs) }}
+          EVENT: ${{ github.event_name }}
+          REUSE: ${{ needs.plan.outputs.reuse == 'true' }}
+          PR_NUMBER: ${{ needs.plan.outputs.pr }}
+          HEAD_SHA: ${{ needs.plan.outputs.head }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          set -uo pipefail
           echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
-          echo "$NEEDS" | jq -e 'all(.[]; .result == "success")' > /dev/null
+          ok=false
+          # With `reuse`, the jobs were skipped on purpose: their success is the earlier all-green on this very head.
+          if echo "$NEEDS" | jq -e --argjson reuse "$REUSE" 'all(.[]; .result == "success" or ($reuse and .result == "skipped"))' > /dev/null; then ok=true; fi
+          if [ "$EVENT" = workflow_dispatch ]; then
+            if [ -z "$HEAD_SHA" ]; then echo "no pull request head: the plan job failed, nothing to post" >&2; exit 1; fi
+            current="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq .head.sha)" || exit 1
+            if [ "$current" != "$HEAD_SHA" ]; then echo "the head moved to $current during the run; not posting on $HEAD_SHA" >&2; exit 1; fi
+            conclusion=failure; [ "$ok" = true ] && conclusion=success
+            gh api -X POST "repos/$GITHUB_REPOSITORY/check-runs" -f name=all-green -f head_sha="$HEAD_SHA" -f status=completed \
+              -f conclusion="$conclusion" -f details_url="$RUN_URL" -f "output[title]=pr-check on this head: $conclusion" \
+              -f "output[summary]=Run by hand on this draft (workflow_dispatch): $RUN_URL" || exit 1
+            echo "posted all-green ($conclusion) on $HEAD_SHA"
+          fi
+          [ "$ok" = true ]

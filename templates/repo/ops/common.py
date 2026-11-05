@@ -84,6 +84,14 @@ class Gh:
         except ValueError:
             return out
 
+    def graphql(self, query: str, variables: dict | None = None) -> dict:
+        """One GraphQL call (a mutation or a query). Raises if GitHub answers with errors."""
+        out = self._run(["graphql", "--input", "-"], json.dumps({"query": query, "variables": variables or {}}))
+        data = json.loads(out) if out.strip() else {}
+        if data.get("errors"):
+            raise RuntimeError(f"graphql failed: {json.dumps(data['errors'])[:300]}")
+        return data.get("data") or {}
+
     def post(self, path: str, body: dict | None = None):
         out = self._run(["--method", "POST", path, "--input", "-"], json.dumps(body or {}))
         try:

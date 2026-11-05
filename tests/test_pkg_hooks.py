@@ -288,3 +288,118 @@ def test_subagents_still_cannot_open_prs_by_any_spelling(repo):
                 "git commit -m 'gh pr create'"):
         assert call("no_subagent_pr.py", bash(repo, cmd, sub=True), repo) is None, cmd
     assert call("no_subagent_pr.py", bash(repo, "gh pr create --draft -t t"), repo) is None  # the lead may
+
+
+# ── marking a pull request ready needs a green pr-check on its current head ──
+
+FAKE_READY_GH = """#!{py}
+import json, os, sys
+a = sys.argv[1:]
+r = json.load(open(os.environ["FAKE_READY"]))
+if a[:2] == ["pr", "view"]:
+    out = r.get("pr view")
+elif a[:2] == ["api", "graphql"]:
+    out = r.get("graphql")
+elif a[:1] == ["api"]:
+    out = r.get(a[1].split("?")[0])
+else:
+    out = None
+if out is None:
+    sys.exit(1)
+print(json.dumps(out))
+"""
+SLUG = "o/r"
+HEAD = "abcdef1234567890"
+PULL = {"number": 5, "url": f"https://github.com/{SLUG}/pull/5", "headRefOid": HEAD, "title": "Add a thing", "body": "Refs-item: APP-1"}
+
+
+def checks(*runs):
+    return {f"repos/{SLUG}/commits/{HEAD}/check-runs": {"check_runs": [
+        {"id": i, "name": "all-green", "status": st, "conclusion": c} for i, (st, c) in enumerate(runs, 1)]}}
+
+
+@pytest.fixture
+def ready_gh(tmp_path):
+    b = tmp_path / "rbin"
+    b.mkdir()
+    g = b / "gh"
+    g.write_text(FAKE_READY_GH.format(py=sys.executable))
+    g.chmod(g.stat().st_mode | stat.S_IEXEC)
+    f = tmp_path / "ready.json"
+
+    def serve(**routes):
+        base = {"pr view": PULL, f"repos/{SLUG}/pulls/5": {**PULL, "head": {"sha": HEAD}},
+                "graphql": {"data": {"node": PULL}}}
+        f.write_text(json.dumps({**base, **routes}))
+        return b, {"FAKE_READY": str(f)}
+
+    return serve
+
+
+def ready(repo, ready_gh, cmd, **routes):
+    b, env = ready_gh(**routes)
+    return call("pr_open_rules.py", bash(repo, cmd), repo, env=env, bin_dir=b)
+
+
+def why(out):
+    assert decision(out) == "deny", out
+    return out["hookSpecificOutput"]["permissionDecisionReason"]
+
+
+def test_a_draft_whose_head_never_passed_pr_check_cannot_be_marked_ready_and_the_refusal_names_the_command(repo, ready_gh):
+    text = why(ready(repo, ready_gh, "gh pr ready 5", **checks()))
+    assert "gh workflow run pr-check.yml -f pr=5" in text and "abcdef1" in text and "missing" in text
+
+
+@pytest.mark.parametrize("runs,word", [([("completed", "failure")], "failure"), ([("completed", "skipped")], "skipped"),
+                                       ([("in_progress", None)], "pending"),
+                                       ([("completed", "success"), ("completed", "failure")], "failure")])
+def test_only_a_successful_latest_all_green_on_the_head_lets_it_through(repo, ready_gh, runs, word):
+    assert word in why(ready(repo, ready_gh, "gh pr ready 5", **checks(*runs)))
+
+
+def test_a_head_with_a_successful_all_green_can_be_marked_ready_even_after_an_earlier_failure(repo, ready_gh):
+    assert ready(repo, ready_gh, "gh pr ready 5", **checks(("completed", "failure"), ("completed", "success"))) is None
+    assert ready(repo, ready_gh, "gh pr ready", **checks(("completed", "success"))) is None          # the current branch's PR
+    assert ready(repo, ready_gh, f"gh pr ready 5 -R {SLUG}", **checks(("completed", "success"))) is None
+
+
+def test_a_commit_status_named_all_green_counts_when_there_is_no_check_run(repo, ready_gh):
+    st = {f"repos/{SLUG}/commits/{HEAD}/status": {"statuses": [{"context": "all-green", "state": "success"}]}}
+    assert ready(repo, ready_gh, "gh pr ready 5", **checks(), **st) is None
+    st = {f"repos/{SLUG}/commits/{HEAD}/status": {"statuses": [{"context": "all-green", "state": "failure"}]}}
+    assert "failure" in why(ready(repo, ready_gh, "gh pr ready 5", **{f"repos/{SLUG}/commits/{HEAD}/check-runs": {"check_runs": []}}, **st))
+
+
+def test_going_back_to_draft_and_other_pr_commands_are_never_refused(repo, ready_gh):
+    for cmd in ("gh pr ready 5 --undo", "gh pr view 5", "gh pr checks 5", "gh pr comment 5 -b hi",
+                "gh api -X PATCH repos/o/r/pulls/5 -f title=new", "gh api repos/o/r/pulls/5"):
+        assert ready(repo, ready_gh, cmd, **checks()) is None, cmd
+
+
+def test_a_revert_and_a_fixes_breakage_description_are_exempt(repo, ready_gh):
+    assert ready(repo, ready_gh, "gh pr ready 5", **checks(), **{"pr view": {**PULL, "title": "Revert the thing"}}) is None
+    assert ready(repo, ready_gh, "gh pr ready 5", **checks(), **{"pr view": {**PULL, "body": "x\nThis reverts commit abc."}}) is None
+    assert ready(repo, ready_gh, "gh pr ready 5", **checks(),
+                 **{"pr view": {**PULL, "body": "Refs-item: APP-1\nFixes-breakage: main is red"}}) is None
+
+
+def test_the_graphql_mutation_and_the_rest_patch_are_held_to_the_same_rule(repo, ready_gh):
+    lit = "gh api graphql -f query='mutation{markPullRequestReadyForReview(input:{pullRequestId:\"PR_x\"}){clientMutationId}}'"
+    var = ("gh api graphql -f query='mutation($id:ID!){markPullRequestReadyForReview(input:{pullRequestId:$id}){clientMutationId}}' "
+           "-f id=PR_x")
+    rest = "gh api -X PATCH repos/o/r/pulls/5 -F draft=false"
+    for cmd in (lit, var, rest, "gh api repos/o/r/pulls/5 --method PATCH -f draft=false"):
+        assert "gh workflow run pr-check.yml -f pr=5" in why(ready(repo, ready_gh, cmd, **checks())), cmd
+        assert ready(repo, ready_gh, cmd, **checks(("completed", "success"))) is None, cmd
+    assert ready(repo, ready_gh, "gh api graphql -f query='query{viewer{login}}'", **checks()) is None
+
+
+def test_a_mutation_whose_pull_request_cannot_be_read_is_refused(repo, ready_gh):
+    cmd = "gh api graphql -f query='mutation($i:MarkPullRequestReadyForReviewInput!){markPullRequestReadyForReview(input:$i){clientMutationId}}'"
+    assert "cannot be read" in why(ready(repo, ready_gh, cmd, **checks(("completed", "success"))))
+
+
+def test_the_ready_rule_passes_when_gh_or_the_api_cannot_answer(repo, ready_gh):
+    assert call("pr_open_rules.py", bash(repo, "gh pr ready 5"), repo, env={"PATH": "/usr/bin:/bin"}) is None   # no gh
+    assert ready(repo, ready_gh, "gh pr ready 5") is None                          # no check-runs route: the API fails

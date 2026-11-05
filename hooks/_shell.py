@@ -226,8 +226,9 @@ def _parse_create(args: list, cwd: str) -> PrCall:
     return call
 
 
-def _parse_api(args: list, cwd: str) -> Optional[PrCall]:
-    """A POST to .../pulls. In `gh api`, -f/-F are fields (-F is typed, `@file` reads a file), never a body file."""
+def _api_parts(args: list, cwd: str) -> tuple:
+    """`gh api` arguments as (method, endpoint, fields, has_params, opaque). In `gh api`, -f/-F are fields (-F is typed,
+    `@file` reads a file), never a body file."""
     method, endpoint, fields, has_params, i, opaque = "", "", {}, False, 0, False
     while i < len(args):
         a, val = args[i], None
@@ -255,6 +256,12 @@ def _parse_api(args: list, cwd: str) -> Optional[PrCall]:
         elif not a.startswith("-") and not endpoint:
             endpoint = a
         i += 1
+    return method, endpoint, fields, has_params, opaque
+
+
+def _parse_api(args: list, cwd: str) -> Optional[PrCall]:
+    """A POST to .../pulls."""
+    method, endpoint, fields, has_params, opaque = _api_parts(args, cwd)
     if not re.search(r"(^|/)pulls/?$", endpoint.split("?")[0]) or (method or ("POST" if has_params else "GET")) != "POST":
         return None
     return PrCall("api", cwd, draft=str(fields.get("draft", "")).lower() == "true", title=str(fields.get("title", "")),
@@ -274,4 +281,80 @@ def pr_open_calls(command: str, cwd: str = "") -> list:
             call = _parse_api(rest[1:], c.cwd)
             if call:
                 out.append(call)
+    return out
+
+
+# ── marking a pull request ready for review, in the three ways a command line can ──
+
+@dataclass
+class ReadyCall:
+    kind: str                       # "cli" (`gh pr ready`), "graphql" (markPullRequestReadyForReview) or "rest" (PATCH draft=false)
+    cwd: str
+    selector: str = ""              # cli: a number, URL or branch; "" is the current branch's pull request
+    repo: str = ""                  # owner/name from -R or the endpoint; "" means the checkout's own repository
+    number: str = ""                # rest
+    node_id: str = ""               # graphql: the pull request's node id
+    opaque: bool = False            # graphql: the mutation is there but its pull request id cannot be read
+
+
+_READY_MUTATION = re.compile(r"markPullRequestReadyForReview", re.I)
+_READY_ID_LITERAL = re.compile(r"pullRequestId\s*:\s*\"([^\"]+)\"")
+_READY_ID_VARIABLE = re.compile(r"pullRequestId\s*:\s*\$(\w+)")
+_PULL_ENDPOINT = re.compile(r"^/?repos/([^/]+/[^/]+)/pulls/(\d+)/?$")
+
+
+def _parse_ready_cli(args: list, cwd: str) -> Optional[ReadyCall]:
+    call, i = ReadyCall("cli", cwd), 0
+    while i < len(args):
+        a, val = args[i], None
+        if a.startswith("--") and "=" in a:
+            a, val = a.split("=", 1)
+        if a == "--undo":
+            return None                      # back to draft: nothing to check
+        if a in ("-R", "--repo"):
+            if val is None and i + 1 < len(args):
+                val, i = args[i + 1], i + 1
+            call.repo = val or ""
+        elif not a.startswith("-") and not call.selector:
+            call.selector = a
+        i += 1
+    return call
+
+
+def _parse_ready_api(args: list, cwd: str) -> Optional[ReadyCall]:
+    method, endpoint, fields, has_params, opaque = _api_parts(args, cwd)
+    ep = endpoint.split("?")[0]
+    if ep.strip("/") == "graphql":
+        query = str(fields.get("query", ""))
+        if not _READY_MUTATION.search(query):
+            return None
+        variables = fields.get("variables") if isinstance(fields.get("variables"), dict) else fields
+        m = _READY_ID_LITERAL.search(query)
+        if m:
+            return ReadyCall("graphql", cwd, node_id=m.group(1))
+        m = _READY_ID_VARIABLE.search(query)
+        if m and str(variables.get(m.group(1), "")):
+            return ReadyCall("graphql", cwd, node_id=str(variables[m.group(1)]))
+        return ReadyCall("graphql", cwd, opaque=True)
+    m = _PULL_ENDPOINT.match(ep)
+    if m and method == "PATCH" and str(fields.get("draft", "")).lower() == "false":
+        return ReadyCall("rest", cwd, repo=m.group(1), number=m.group(2))
+    return None
+
+
+def pr_ready_calls(command: str, cwd: str = "") -> list:
+    """Every `gh pr ready` (not `--undo`), every markPullRequestReadyForReview mutation and every PATCH of a pull request with
+    `draft=false`, in a command line."""
+    out = []
+    for c in simple_commands(command, cwd):
+        if c.verb != "gh":
+            continue
+        rest = c.argv[1:]
+        call = None
+        if rest[:2] == ["pr", "ready"]:
+            call = _parse_ready_cli(rest[2:], c.cwd)
+        elif rest[:1] == ["api"]:
+            call = _parse_ready_api(rest[1:], c.cwd)
+        if call:
+            out.append(call)
     return out

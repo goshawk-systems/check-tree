@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""PreToolUse on Bash, on `gh pr create` and a POST to a repo's pulls endpoint (`gh api`): the rules for opening a PR.
+"""PreToolUse on Bash, on `gh pr create`, a POST to a repo's pulls endpoint (`gh api`) and every way of marking a PR ready: the rules
+for opening a PR and for marking it ready.
 
 (a) it opens as a draft (`--draft`/`-d`; for `gh api`, `-F draft=true`); (c) one open PR per work item: an id in
 the body's `Closes-item:`/`Refs-item:` line may not already appear on another open PR (`gh pr list`), unless
@@ -9,9 +10,16 @@ an item is in `freeze_allowed_items` or the body has `Fixes-breakage:`. (b) "not
 `no_subagent_pr.py`, which reads the same parsed call. In `gh api`, `-f`/`-F` are fields (`-F` is typed; `@file`
 reads a file), not a body file: only `gh pr create --body-file` is one.
 
+(f) A PR is marked ready only when its CURRENT head has a successful `all-green` (the check `pr-check.yml` posts). The ways of marking
+ready that are read: `gh pr ready <n>` (not `--undo`), the GraphQL mutation `markPullRequestReadyForReview`, and `gh api -X PATCH
+.../pulls/<n> -F draft=false`. A draft runs no checks, so the refusal names the command that runs them on it:
+`gh workflow run pr-check.yml -f pr=<n>`. A revert and a body with `Fixes-breakage:` are exempt, as in (c) and (e). A head whose latest
+`all-green` is failing, skipped, pending or missing is refused; if `gh` or the API is unavailable the rule passes (it cannot be checked).
+
 Settings: `.check-tree/repo.json` keys max_pr_files, process_prefixes, freeze_allowed_items. If `gh` or the base
 ref is unavailable, rules (c) and (d) pass (they cannot be checked); a body read from stdin is refused.
-It cannot see: a PR opened from a script, the web page or another tool, or a body written after opening.
+It cannot see: a PR opened or marked ready from a script, the web page or another tool, or a body written after opening. (The web
+page's "Ready for review" is covered after the fact: `ready_for_review` runs pr-check, and a failure there sends the PR back to draft.)
 """
 from __future__ import annotations
 
@@ -38,6 +46,74 @@ def _open_pr_bodies(cwd: str) -> list:
         return json.loads(p.stdout) if p.returncode == 0 else []
     except (OSError, subprocess.TimeoutExpired, ValueError):
         return []
+
+
+GREEN_CHECK = "all-green"
+
+
+def _gh_json(args: list, cwd: str):
+    """`gh <args>` parsed, or None when gh is missing, fails or does not answer with JSON."""
+    try:
+        p = subprocess.run(["gh", *args], cwd=cwd or None, capture_output=True, text=True, timeout=60)
+        return json.loads(p.stdout) if p.returncode == 0 else None
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return None
+
+
+def _pull_request(call: S.ReadyCall) -> "dict | None":
+    """{number, slug (owner/name), sha, title, body} of the pull request being marked ready, or None if it cannot be read."""
+    if call.kind == "rest":
+        d = _gh_json(["api", f"repos/{call.repo}/pulls/{call.number}"], call.cwd)
+        return d and {"number": d.get("number") or call.number, "slug": call.repo, "sha": (d.get("head") or {}).get("sha", ""),
+                      "title": d.get("title") or "", "body": d.get("body") or ""}
+    if call.kind == "graphql":
+        q = "query($id:ID!){node(id:$id){... on PullRequest{number url headRefOid title body}}}"
+        d = ((_gh_json(["api", "graphql", "-f", f"query={q}", "-f", f"id={call.node_id}"], call.cwd) or {}).get("data") or {}).get("node")
+    else:
+        d = _gh_json(["pr", "view", *([call.selector] if call.selector else []), *(["-R", call.repo] if call.repo else []),
+                      "--json", "number,url,headRefOid,title,body"], call.cwd)
+    m = re.match(r"https?://[^/]+/([^/]+/[^/]+)/pull/", (d or {}).get("url") or "")
+    if not d or not m:
+        return None
+    return {"number": d.get("number"), "slug": m.group(1), "sha": d.get("headRefOid") or "", "title": d.get("title") or "",
+            "body": d.get("body") or ""}
+
+
+def _green_state(slug: str, sha: str, cwd: str) -> "str | None":
+    """The conclusion of the LATEST `all-green` on a commit (check run first, then a commit status of that name); "missing" if there is
+    none, "pending" if it has not completed; None if the API cannot be read."""
+    d = _gh_json(["api", f"repos/{slug}/commits/{sha}/check-runs?check_name={GREEN_CHECK}&per_page=100"], cwd)
+    if d is None:
+        return None
+    runs = [r for r in d.get("check_runs") or [] if r.get("name", GREEN_CHECK) == GREEN_CHECK]
+    if runs:
+        last = max(runs, key=lambda r: r.get("id") or 0)
+        return (last.get("conclusion") or "pending") if last.get("status", "completed") == "completed" else "pending"
+    st = _gh_json(["api", f"repos/{slug}/commits/{sha}/status"], cwd)
+    for s in (st or {}).get("statuses") or []:
+        if s.get("context") == GREEN_CHECK:
+            return "success" if s.get("state") == "success" else (s.get("state") or "pending")
+    return "missing"
+
+
+def ready_refusal(call: S.ReadyCall) -> "str | None":
+    if call.opaque:
+        return ("check-tree: this marks a pull request ready, but its id cannot be read from the command. Name it in the mutation "
+                "(`pullRequestId: \"<id>\"`, or a variable passed with -f/-F) or use `gh pr ready <number>`.")
+    pr = _pull_request(call)
+    if not pr or not pr["sha"]:
+        return None                       # gh or the API is unavailable: this rule cannot be checked
+    body, title = pr["body"], pr["title"]
+    if re.search(r"^\s*Fixes-breakage:", body, re.M | re.I) or re.match(r"\s*revert\b", title, re.I) or "This reverts commit" in body:
+        return None
+    state = _green_state(pr["slug"], pr["sha"], call.cwd)
+    if state is None or state == "success":
+        return None
+    n = pr["number"]
+    return (f"check-tree: pull request #{n} cannot be marked ready: its current head {pr['sha'][:7]} has not passed `pr-check` "
+            f"(`{GREEN_CHECK}` is {state} on it). A draft runs no checks. Run them on the draft with "
+            f"`gh workflow run pr-check.yml -f pr={n}`; it posts `{GREEN_CHECK}` on this head when it finishes, then mark it ready. "
+            "A new push starts over. To repair something broken, add a `Fixes-breakage: <what is broken>` line to the description.")
 
 
 def refusal(call: S.PrCall, cfg: dict) -> "str | None":
@@ -78,8 +154,14 @@ def main(data: dict) -> None:
     if data.get("tool_name") != "Bash":
         return
     cfg = C.repo_config(data)
-    for call in S.pr_open_calls((data.get("tool_input") or {}).get("command", ""), data.get("cwd") or ""):
+    command, cwd = (data.get("tool_input") or {}).get("command", ""), data.get("cwd") or ""
+    for call in S.pr_open_calls(command, cwd):
         reason = refusal(call, cfg)
+        if reason:
+            C.deny(reason)
+            return
+    for ready in S.pr_ready_calls(command, cwd):
+        reason = ready_refusal(ready)
         if reason:
             C.deny(reason)
             return
