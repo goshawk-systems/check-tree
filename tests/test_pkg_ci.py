@@ -484,3 +484,22 @@ def test_test_roots_keeps_another_projects_tests_out_of_the_selection():
     assert not mod.is_test("rehearsal/hostile-estate/tests/test_jobs.py")
     assert mod.is_test("engine/talon/test_x.py") and mod.is_test("tests/test_claude_md_size.py")
     assert not mod.is_test("engineering/test_x.py"), "a root is a folder, not a name prefix"
+
+
+def test_an_empty_shard_prints_nothing_and_the_workflows_drop_blank_lines(tmp_path):
+    """A shard with no test must print nothing: `mapfile` reads a lone blank line as one empty file name, and pytest given ""
+    collects the whole repository (found on Goshawk #140, 2026-11-05: shards 3 and 4 of a one-test change ran everything)."""
+    r = plant(tmp_path)
+    (r / "src/app/db.py").write_text("def q():\n    return 3\n")
+    sh(r, "git", "commit", "-q", "-am", "change db")
+    p = subprocess.run([sys.executable, str(PKG / "pipeline" / "impacted_tests.py"), "--base", "main", "--no-scanners",
+                        "--shard", "2/4"], cwd=r, capture_output=True, text=True)
+    assert p.returncode == 0 and p.stdout == ""
+    shell = subprocess.run(["bash", "-c", 'mapfile -t files < <(printf "\\n" | sed "/^$/d"); echo "${#files[@]}"'],
+                           capture_output=True, text=True)
+    assert shell.stdout.strip() == "0"
+    for name, script in (("pr-check.yml", "impacted_tests.py"), ("queue-suite.yml", "shards.py")):
+        lines = [ln for ln in (WF / name).read_text().splitlines() if "mapfile -t files" in ln and script in ln]
+        assert lines and all(ln.rstrip().endswith('| sed "/^$/d")') for ln in lines), name
+    src = (CI / "shards.py").read_text()
+    assert "if parts[i - 1]:" in src

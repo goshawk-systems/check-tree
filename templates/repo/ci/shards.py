@@ -94,7 +94,8 @@ def main(argv=None) -> int:
         if not 1 <= i <= total:
             raise SystemExit("--shard I/N needs 1 <= I <= N")
         parts = partition(files, known, total)
-        print("\n".join(parts[i - 1]))
+        if parts[i - 1]:  # an empty shard prints nothing (a blank line reads as one empty file name)
+            print("\n".join(parts[i - 1]))
         return 0
     print(__doc__, file=sys.stderr)
     return 2

@@ -312,7 +312,8 @@ def main(argv=None) -> int:
             print(f"# {t}: {'; '.join(why[t])}", file=sys.stderr)
     if a.shard:
         chosen = shard(chosen, a.shard)
-    print("\n".join(chosen))
+    if chosen:  # an empty shard prints nothing: a blank line would be read as one empty file name, and pytest runs the whole tree on it
+        print("\n".join(chosen))
     return 0
 
 

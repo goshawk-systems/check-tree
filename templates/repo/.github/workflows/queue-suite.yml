@@ -42,7 +42,7 @@ jobs:
           CHECK_TREE_SETUP: "1"
         run: |
           set -euo pipefail
-          mapfile -t files < <(python3 ci/shards.py files --shard "$SHARD/$TOTAL")
+          mapfile -t files < <(python3 ci/shards.py files --shard "$SHARD/$TOTAL" | sed "/^$/d")
           if [ "${#files[@]}" -gt 0 ]; then
             bash ci/run_tests.sh "${files[@]}"
           elif [ "$(python3 ci/shards.py discovered)" = "0" ]; then

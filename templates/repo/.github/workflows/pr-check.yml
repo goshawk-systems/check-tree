@@ -84,7 +84,7 @@ jobs:
           if [ "$QUEUE_DRAFT" = "true" ]; then
             echo "queue draft: the full suite runs in queue-suite; nothing to select here"; exit 0
           fi
-          mapfile -t files < <(python3 ci/impacted_tests.py --base "$BASE" --shard "$SHARD/4")
+          mapfile -t files < <(python3 ci/impacted_tests.py --base "$BASE" --shard "$SHARD/4" | sed "/^$/d")
           if [ "${#files[@]}" -eq 0 ]; then echo "no test reached in this shard"; exit 0; fi
           printf '%s\n' "${files[@]}"
           bash ci/run_tests.sh "${files[@]}"
