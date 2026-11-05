@@ -1,0 +1,47 @@
+# Daily goal report for the previous UTC day, beside the repository's own first-day baseline.
+name: Daily goal report
+on:
+  schedule:
+    - cron: "10 1 * * *"
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "UTC day to report (YYYY-MM-DD); default yesterday"
+        required: false
+permissions:
+  actions: read
+  contents: write   # the `reports` branch only
+  pull-requests: read
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPORT_DATE: ${{ github.event.inputs.date }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - name: Check out the reports branch (create it on the first run)
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --heads origin reports >/dev/null 2>&1; then
+            git fetch origin reports && git worktree add .reports origin/reports
+          else
+            git worktree add --detach .reports && (cd .reports && git checkout --orphan reports && git rm -rf -q . )
+          fi
+          mkdir -p .reports/ops
+          # a baseline committed on the default branch wins over the reports branch's copy
+          [ -f ops/baseline.json ] && cp ops/baseline.json .reports/ops/baseline.json || true
+      - name: Build the report
+        run: python3 -m ops.daily_report ${REPORT_DATE:+--date "$REPORT_DATE"} --baseline .reports/ops/baseline.json --out-dir .reports/reports
+      - name: Save to the reports branch
+        run: |
+          set -euo pipefail
+          cd .reports
+          git config user.name "check-tree ops"; git config user.email "ops@users.noreply.github.com"
+          git add -- reports ops/baseline.json
+          git diff --cached --quiet && exit 0
+          git commit -m "Goal report $(date -u +%Y-%m-%d)"
+          git push origin HEAD:reports
