@@ -46,6 +46,8 @@ def changed_files(base: str) -> list[str]:
 def is_test(path: str, tests_dir: str = "tests") -> bool:
     """A test file by name, wherever it lives (`tests_dir` is kept for callers; a src/pkg/test_x.py is a test too)."""
     name = pathlib.PurePosixPath(path).name
+    if "/templates/" in f"/{path}":  # data the installer copies into a repo, never a test of this one
+        return False
     return path.endswith(".py") and (name.startswith("test_") or name.endswith("_test.py"))
 
 

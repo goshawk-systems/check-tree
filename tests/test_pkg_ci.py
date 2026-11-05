@@ -458,3 +458,15 @@ def test_the_pr_template_marks_the_four_required_items():
     for needle in ("Closes-item:", "## What changed (required)", "Test edits:", "## Consumer proof (required)"):
         assert needle in t
     assert t.count("(optional)") >= 3
+
+
+def test_a_template_file_is_never_selected_as_a_test():
+    """Files under templates/ are data the installer copies into a repo; collected inside an adopting repo they fail
+    for want of the repo they describe (found installing into Goshawk, 2026-11-05)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("impacted_tests_tpl", PKG / "pipeline" / "impacted_tests.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert not mod.is_test(".claude/check-tree/templates/test_claude_md_size.py")
+    assert not mod.is_test("templates/repo/tests/test_claude_md_size.py")
+    assert mod.is_test("tests/test_claude_md_size.py") and mod.is_test("engine/talon/test_x.py")
