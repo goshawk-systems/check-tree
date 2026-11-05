@@ -16,7 +16,7 @@ locals {
     "m7i.large"      = 0.1008
     "m7i-flex.large" = 0.09576
     "m6i.large"      = 0.096
-    "m6in.large"     = 0.11151
+    "m6in.large"     = 0.13923
     "m5.large"       = 0.096
     "m5n.large"      = 0.119
     # 2 vCPU / 4 GiB (compute-optimised)
@@ -26,7 +26,7 @@ locals {
     "m7i.xlarge"      = 0.2016
     "m7i-flex.xlarge" = 0.19152
     "m6i.xlarge"      = 0.192
-    "m6in.xlarge"     = 0.22302
+    "m6in.xlarge"     = 0.27846
     "m5.xlarge"       = 0.192
     "m5n.xlarge"      = 0.238
     # 4 vCPU / 8 GiB (compute-optimised)

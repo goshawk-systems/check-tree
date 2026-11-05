@@ -99,13 +99,13 @@ variable "classes" {
   default = {
     # 2 vCPU / 8 GiB. 4 machines at most.
     "ci-small" = {
-      instance_types = ["m7i.large", "m7i-flex.large", "m6i.large", "m5.large", "m6in.large"]
+      instance_types = ["m7i.large", "m7i-flex.large", "m6i.large", "m5.large"]
       max_count      = 4
       capacity       = "spot"
     }
     # 4 vCPU / 16 GiB. 2 machines at most.
     "ci-medium" = {
-      instance_types = ["m7i.xlarge", "m7i-flex.xlarge", "m6i.xlarge", "m5.xlarge", "m6in.xlarge"]
+      instance_types = ["m7i.xlarge", "m7i-flex.xlarge", "m6i.xlarge", "m5.xlarge"]
       max_count      = 2
       capacity       = "spot"
     }

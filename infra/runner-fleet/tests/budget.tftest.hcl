@@ -33,8 +33,8 @@ run "defaults_are_under_the_default_budget" {
   command = plan
 
   assert {
-    condition     = output.worst_case_monthly_usd <= 700 && output.worst_case_monthly_usd > 600
-    error_message = "the two default classes should price at about USD 651 a month in the worst case"
+    condition     = output.worst_case_monthly_usd <= 700 && output.worst_case_monthly_usd > 580
+    error_message = "the two default classes should price at about USD 589 a month in the worst case"
   }
   assert {
     condition     = sum(values(output.ceilings)) <= 6

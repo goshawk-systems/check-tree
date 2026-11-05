@@ -12,11 +12,11 @@ shape peaked at 454 machines at once and cost about $5,700 a month before it was
 
 | Class | Machine | Ceiling (`max_count`) | Capacity |
 |---|---|---|---|
-| `ci-small` | 2 vCPU / 8 GiB (five equivalent Intel types) | 4 | spot, on-demand failover |
-| `ci-medium` | 4 vCPU / 16 GiB (five equivalent Intel types) | 2 | spot, on-demand failover |
+| `ci-small` | 2 vCPU / 8 GiB (four equivalent Intel types) | 4 | spot, on-demand failover |
+| `ci-medium` | 4 vCPU / 16 GiB (four equivalent Intel types) | 2 | spot, on-demand failover |
 
 At most **6 machines** at once. A job past the ceiling **waits** for a machine; it does not fail. Worst case for the month
-(every machine busy all month at the dearest listed type's on-demand price): **USD 651.22**, under the default
+(every machine busy all month at the dearest listed type's on-demand price): **USD 588.67** (prices checked against the AWS price list, us-east-1, 2026-11-05), under the default
 `monthly_budget_usd` of 700. The plan refuses to run if it is not (see "The two cost guards").
 
 A workflow uses a class with `runs-on: [self-hosted, linux, x64, ci-small]`.

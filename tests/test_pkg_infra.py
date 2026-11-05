@@ -17,7 +17,7 @@ FLEET = PKG / "infra" / "runner-fleet"
 README = PKG / "infra" / "README.md"
 
 # What the default classes were priced at when written: 4 x m6in.large + 2 x m6in.xlarge, 730 h.
-DEFAULT_WORST_CASE = 651.2184
+DEFAULT_WORST_CASE = 588.672
 
 
 def _tf(name: str) -> str:
