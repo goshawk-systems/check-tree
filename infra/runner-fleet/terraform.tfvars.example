@@ -1,0 +1,17 @@
+# Copy to terraform.tfvars (gitignored) and fill in. Nothing in this file is a secret: the two SSM entries are NAMES.
+github_org = "your-org"
+
+github_app = {
+  id                                = "123456" # the App ID shown on the GitHub App's settings page
+  key_base64_ssm_parameter_name     = "/check-tree/github-app/key_base64"
+  webhook_secret_ssm_parameter_name = "/check-tree/github-app/webhook_secret"
+}
+
+budget_alert_email = "you@example.com"
+monthly_budget_usd = 700
+
+# The defaults: spot with on-demand failover, 6 machines at most in total. Raise a ceiling by editing its max_count.
+# classes = {
+#   "ci-small"  = { instance_types = ["m7i.large", "m7i-flex.large", "m6i.large", "m5.large", "m6in.large"], max_count = 4 }
+#   "ci-medium" = { instance_types = ["m7i.xlarge", "m7i-flex.xlarge", "m6i.xlarge", "m5.xlarge", "m6in.xlarge"], max_count = 2 }
+# }

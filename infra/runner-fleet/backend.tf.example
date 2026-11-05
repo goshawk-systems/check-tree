@@ -1,0 +1,11 @@
+# Optional, recommended once more than one person runs terraform: remote state with native S3 locking (Terraform >= 1.10).
+# Create the bucket yourself first (versioning on, default encryption on), then copy this to backend.tf (gitignored) and
+# run `terraform init -migrate-state`. State holds SSM parameter names, never a secret value.
+terraform {
+  backend "s3" {
+    bucket       = "REPLACE-with-your-state-bucket"
+    key          = "check-tree-runner-fleet/terraform.tfstate"
+    region       = "us-east-1"
+    use_lockfile = true
+  }
+}
