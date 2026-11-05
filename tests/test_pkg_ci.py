@@ -755,3 +755,28 @@ def test_a_failed_post_fails_the_dispatch_run(fake_gh):
     p, _, _ = fake_gh(ALL_GREEN, {**agg_env(NEEDS_OK, event="workflow_dispatch"), "FAKE_POST_FAILS": "1"},
                       {"repos/o/r/pulls/7": {"head": {"sha": "h1"}}})
     assert p.returncode != 0
+
+
+def _strings(node):
+    if isinstance(node, dict):
+        for k, v in node.items():
+            yield from _strings(k)
+            yield from _strings(v)
+    elif isinstance(node, list):
+        for v in node:
+            yield from _strings(v)
+    elif isinstance(node, str):
+        yield node
+
+
+@pytest.mark.parametrize("path", sorted(WF.glob("*.yml")), ids=lambda p: p.name)
+def test_every_expression_in_a_workflow_is_closed_after_yaml_parses_it(path):
+    """YAML ends a plain value at ` #`, so `run-name: ${{ format('PR #{0}', ...) }}` parses to an expression that never closes, and
+    GitHub refuses the whole workflow (Goshawk #147, 2026-11-05: `gh workflow run pr-check.yml` answered 422 "The expression is not
+    closed"). Every `${{` in a parsed value has its `}}`."""
+    for s in _strings(yaml.safe_load(path.read_text())):
+        assert s.count("${{") == s.count("}}") or s.count("${{") <= s.count("}}"), (path.name, s[:160])
+        depth = 0
+        for m in re.finditer(r"\$\{\{|\}\}", s):
+            depth += 1 if m.group() == "${{" else -1
+        assert depth <= 0, (path.name, s[:160])

@@ -16,7 +16,7 @@
 # would be skipped (a draft push) or sits on another commit (a dispatch) it is named otherwise. test_pkg_ci.py checks this
 # for every kind of event.
 name: pr-check
-run-name: ${{ github.event_name == 'workflow_dispatch' && format('pr-check for PR #{0} (dispatch)', inputs.pr) || github.event.pull_request.title }}
+run-name: "${{ github.event_name == 'workflow_dispatch' && format('pr-check for PR #{0} (dispatch)', inputs.pr) || github.event.pull_request.title }}"
 
 on:
   pull_request:
