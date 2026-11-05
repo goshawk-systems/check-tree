@@ -1,0 +1,181 @@
+# The pull-request check. One entry, one aggregate status: `all-green`. Make `all-green` the ONLY required status
+# in branch protection; the merge queue (.mergify.yml) reads it too.
+#
+# Every job skips a draft pull request, EXCEPT the queue's own draft (head branch `mergify/merge-queue/...`): Mergify opens
+# those as drafts and they need these statuses. Settings come from `.check-tree/repo.json`; nothing here names a project.
+name: pr-check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: pr-check-${{ github.event.pull_request.number }}
+  cancel-in-progress: ${{ !startsWith(github.head_ref, 'mergify/merge-queue/') }}
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    if: ${{ !github.event.pull_request.draft || startsWith(github.head_ref, 'mergify/merge-queue/') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Lint the changed files
+        env:
+          BASE: origin/${{ github.base_ref }}
+          CHECK_TREE_SETUP: "1"
+        run: |
+          set -euo pipefail
+          lint="$(python3 ci/settings.py get lint_command)"
+          exts="$(python3 ci/settings.py get lint_extensions)"
+          setup="$(python3 ci/settings.py get setup_command)"
+          [ -z "$setup" ] || bash -c "$setup"
+          mb="$(git merge-base "$BASE" HEAD)"
+          files=()
+          while IFS= read -r f; do
+            [ -f "$f" ] || continue
+            while IFS= read -r e; do
+              if [ -n "$e" ] && [ "${f%"$e"}" != "$f" ]; then files+=("$f"); break; fi
+            done <<< "$exts"
+          done < <(git diff --name-only --diff-filter=d "$mb")
+          if [ "${#files[@]}" -eq 0 ]; then echo "no lintable file changed"; exit 0; fi
+          bash -c "$lint \"\$@\"" _ "${files[@]}"
+
+  secret-scan:
+    if: ${{ !github.event.pull_request.draft || startsWith(github.head_ref, 'mergify/merge-queue/') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: gitleaks over the commits this change adds
+        env:
+          BASE: origin/${{ github.base_ref }}
+          GITLEAKS_VERSION: "8.18.4"
+        run: |
+          set -euo pipefail
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" | tar -xz gitleaks
+          mb="$(git merge-base "$BASE" HEAD)"
+          ./gitleaks detect --source . --log-opts "${mb}..HEAD" --redact --no-banner
+
+  impacted-tests:
+    if: ${{ !github.event.pull_request.draft || startsWith(github.head_ref, 'mergify/merge-queue/') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: The tests this change reaches, shard ${{ matrix.shard }} of 4
+        env:
+          BASE: origin/${{ github.base_ref }}
+          SHARD: ${{ matrix.shard }}
+          QUEUE_DRAFT: ${{ startsWith(github.head_ref, 'mergify/merge-queue/') }}
+          CHECK_TREE_SETUP: "1"
+        run: |
+          set -euo pipefail
+          if [ "$QUEUE_DRAFT" = "true" ]; then
+            echo "queue draft: the full suite runs in queue-suite; nothing to select here"; exit 0
+          fi
+          mapfile -t files < <(python3 ci/impacted_tests.py --base "$BASE" --shard "$SHARD/4")
+          if [ "${#files[@]}" -eq 0 ]; then echo "no test reached in this shard"; exit 0; fi
+          printf '%s\n' "${files[@]}"
+          bash ci/run_tests.sh "${files[@]}"
+
+  pr-body:
+    if: ${{ !github.event.pull_request.draft || startsWith(github.head_ref, 'mergify/merge-queue/') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: The description names a work item, every file, every test edit, and a consumer proof
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE: origin/${{ github.base_ref }}
+          QUEUE_DRAFT: ${{ startsWith(github.head_ref, 'mergify/merge-queue/') }}
+        run: |
+          set -euo pipefail
+          if [ "$QUEUE_DRAFT" = "true" ]; then
+            echo "queue draft: its description is Mergify's; each change's own was checked on its pull request"; exit 0
+          fi
+          printf '%s' "$PR_BODY" > "$RUNNER_TEMP/body.md"
+          python3 ci/check_pr_body.py --body "$RUNNER_TEMP/body.md" --base "$BASE"
+
+  pr-size:
+    if: ${{ !github.event.pull_request.draft || startsWith(github.head_ref, 'mergify/merge-queue/') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: The change is under max_pr_files
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE: origin/${{ github.base_ref }}
+          QUEUE_DRAFT: ${{ startsWith(github.head_ref, 'mergify/merge-queue/') }}
+        run: |
+          set -euo pipefail
+          if [ "$QUEUE_DRAFT" = "true" ]; then echo "queue draft: a batch is several changes by design"; exit 0; fi
+          printf '%s' "$PR_BODY" > "$RUNNER_TEMP/body.md"
+          python3 ci/check_pr_body.py size --body "$RUNNER_TEMP/body.md" --base "$BASE"
+
+  mergify-config:
+    if: ${{ !github.event.pull_request.draft || startsWith(github.head_ref, 'mergify/merge-queue/') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: The committed .mergify.yml is what the template and the settings render to
+        run: python3 ci/render_mergify.py --check
+
+  # Copies master's latest settled `master-health` verdict onto this head, so the queue can read it (Mergify reads statuses on the
+  # pull request, not on the base). Its own job and a checkout of the BASE branch's scripts only: it holds `statuses: write`, and
+  # the pull request's own code must never share a job with a write token.
+  master-health-onto-pr:
+    if: ${{ !github.event.pull_request.draft || startsWith(github.head_ref, 'mergify/merge-queue/') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      statuses: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+          sparse-checkout: |
+            ci
+            .check-tree
+          persist-credentials: false
+      - name: Copy the verdict
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          QUEUE_DRAFT: ${{ startsWith(github.head_ref, 'mergify/merge-queue/') }}
+        run: |
+          set -euo pipefail
+          if [ "$QUEUE_DRAFT" = "true" ]; then echo "queue draft: the queue reads master-health on the original pull request"; exit 0; fi
+          python3 ci/master_health.py copy-to-pr --branch "$BASE_BRANCH" --sha "$HEAD_SHA"
+
+  all-green:
+    name: all-green
+    if: ${{ always() && (!github.event.pull_request.draft || startsWith(github.head_ref, 'mergify/merge-queue/')) }}
+    needs: [lint, secret-scan, impacted-tests, pr-body, pr-size, mergify-config, master-health-onto-pr]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Every job succeeded (a skipped or cancelled one is not a pass)
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          echo "$NEEDS" | jq -e 'all(.[]; .result == "success")' > /dev/null

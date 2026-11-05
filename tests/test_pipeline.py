@@ -127,3 +127,24 @@ def test_a_removed_assertion_needs_a_reason(tmp_path):
     assert p.returncode == 1 and "tests/test_a.py (1)" in p.stdout
     (r / "body.md").write_text(GOOD + "## Removed assertions\nThe second assertion duplicated the first.\n")
     assert run("scripted_review.py", r, "--body", "body.md", "--base", "main").returncode == 0
+
+
+# ── impacted_tests: the import graph (PROC-718) ──
+
+def test_impacted_tests_follows_imports_through_two_hops_and_survives_a_cycle(tmp_path):
+    r = tmp_path / "g"
+    (r / "pkg").mkdir(parents=True)
+    (r / "tests").mkdir()
+    (r / "pkg" / "__init__.py").write_text("")
+    (r / "pkg" / "top.py").write_text("from pkg import mid\n")
+    (r / "pkg" / "mid.py").write_text("from pkg import leaf\n")
+    (r / "pkg" / "leaf.py").write_text("from pkg import mid\nX = 1\n")      # a cycle mid <-> leaf
+    (r / "tests" / "test_top.py").write_text("import pkg.top\n")
+    (r / "tests" / "test_none.py").write_text("import json\n")
+    sh(r, "git", "init", "-q", "-b", "main")
+    sh(r, "git", "add", "-A")
+    sh(r, "git", "commit", "-q", "-m", "start")
+    sh(r, "git", "checkout", "-q", "-b", "change")
+    (r / "pkg" / "leaf.py").write_text("from pkg import mid\nX = 2\n")
+    sh(r, "git", "commit", "-q", "-am", "change leaf")
+    assert run("impacted_tests.py", r, "--base", "main", "--no-scanners").stdout.split() == ["tests/test_top.py"]
