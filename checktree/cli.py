@@ -16,6 +16,9 @@
     check-tree clean <program> [--hours N]         remove builder worktrees that hold no unlanded work
     check-tree progress <program> "<line>"         add one line to the program's progress log
     check-tree list                                every program and its pass count
+    check-tree init-repo [--target DIR] [--force]  set a repository up: the repo template, settings, hooks, CI
+    check-tree workspace new <name> [--root DIR] [--branch NAME]   a fresh clone of this repo's origin per workstream
+    check-tree workspace sweep [--root DIR] [--apply]              remove clones whose work is merged and pushed (dry run by default)
 """
 from __future__ import annotations
 
@@ -347,6 +350,35 @@ def cmd_list(a) -> int:
     return 0
 
 
+def cmd_init_repo(a) -> int:
+    from . import install
+    target = pathlib.Path(a.target or ".").resolve()
+    print(install.report_init(target, install.init_repo(target, force=a.force)))
+    return 0
+
+
+def cmd_workspace(a) -> int:
+    from . import install
+    if a.action == "new":
+        dest = install.workspace_new(a.name, _root(), a.root, a.branch)
+        print(f"created {dest} (core.hooksPath .githooks)")
+        return 0
+    origin = install.origin_of(_root()) if _in_repo() else None
+    rows = install.workspace_sweep(a.root, apply=a.apply, only_origin=origin)
+    for path, ok, why, removed in rows:
+        print(("removed " if removed else "would remove " if ok else "keeping ") + f"{path}: {why}")
+    if not rows:
+        print(f"no ws-* clones under {install.workspace_root(a.root)}")
+    elif not a.apply and any(ok for _, ok, _, _ in rows):
+        print("dry run: nothing was removed; pass --apply to remove the clones marked 'would remove'.")
+    print("(merge state is read from the remote branches this clone last fetched; run git fetch in a clone to refresh it)")
+    return 0
+
+
+def _in_repo() -> bool:
+    return core.git(pathlib.Path.cwd(), "rev-parse", "--git-dir")[0] == 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="check-tree", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -387,6 +419,18 @@ def main(argv=None) -> int:
     sp.add_argument("program")
     sp.add_argument("line")
     sub.add_parser("list")
+    sp = sub.add_parser("init-repo")
+    sp.add_argument("--target", help="the repository to set up (default: the current directory)")
+    sp.add_argument("--force", action="store_true", help="overwrite files that already exist")
+    sp = sub.add_parser("workspace")
+    wsub = sp.add_subparsers(dest="action", required=True)
+    w = wsub.add_parser("new")
+    w.add_argument("name")
+    w.add_argument("--root", help="where clones live (default: $CHECK_TREE_WORKSPACE_ROOT or ~/workbench)")
+    w.add_argument("--branch", help="create this branch off origin's default branch")
+    w = wsub.add_parser("sweep")
+    w.add_argument("--root")
+    w.add_argument("--apply", action="store_true", help="actually remove (default is a dry run)")
     a = ap.parse_args(argv)
     return globals()[f"cmd_{a.command.replace('-', '_')}"](a)
 

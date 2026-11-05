@@ -1,0 +1,22 @@
+{
+  "repo_name": "",
+  "default_branch": "main",
+  "product_prefixes": [],
+  "process_prefixes": ["PROC"],
+  "freeze_allowed_items": [],
+  "max_pr_files": 50,
+  "test_command": "python3 -m pytest -q",
+  "lint_command": "ruff check .",
+  "prod": {
+    "deploy_workflow_patterns": ["deploy-prod*", "*production*"],
+    "db_patterns": [],
+    "aws_profiles": [],
+    "aws_accounts": []
+  },
+  "shared_checkouts": [],
+  "fleet": {
+    "monthly_budget_usd": 0,
+    "classes": {}
+  },
+  "work_item_pattern": "[A-Z]{2,6}-\\d+[a-z]?"
+}
