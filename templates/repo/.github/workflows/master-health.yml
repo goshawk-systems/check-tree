@@ -1,0 +1,55 @@
+# Master is guaranteed clean. On every push to the default branch the full suite runs; a red result posts a failing `master-health`
+# status on master's head AND on every open pull request, and .mergify.yml requires `master-health` success to enter the queue, so
+# the queue pauses while master is red. A change whose description carries `Fixes-breakage: <ID>` still enters, first of all.
+# Green turns it back on. (Every PR also gets the settled verdict when it is pushed: pr-check.yml, `master-health-onto-pr`.)
+name: master-health
+
+on:
+  push:
+    branches-ignore: ["mergify/**"]
+
+permissions:
+  contents: read
+
+jobs:
+  pending:
+    if: ${{ github.ref_name == github.event.repository.default_branch }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      statuses: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show the run on the head commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python3 ci/master_health.py post --sha "$GITHUB_SHA" --state pending --description "the full suite is running on master" --url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+
+  suite:
+    if: ${{ github.ref_name == github.event.repository.default_branch }}
+    uses: ./.github/workflows/queue-suite.yml
+
+  verdict:
+    if: ${{ always() && github.ref_name == github.event.repository.default_branch }}
+    needs: [suite]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      statuses: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Post the verdict on master's head and on every open pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RESULT: ${{ needs.suite.result }}
+        run: |
+          set -euo pipefail
+          state=failure; [ "$RESULT" = "success" ] && state=success
+          url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          if [ "$state" = "success" ]; then desc="master is healthy: the full suite passes"; else desc="master is RED: the full suite fails on it"; fi
+          python3 ci/master_health.py post --sha "$GITHUB_SHA" --state "$state" --description "$desc" --url "$url"
+          python3 ci/master_health.py broadcast --branch "$GITHUB_REF_NAME" --state "$state" --description "$desc"

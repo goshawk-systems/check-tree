@@ -1,0 +1,57 @@
+# The merge queue. The ONLY path onto {{default_branch}}: nobody pushes or merges to it by hand.
+#
+# THIS FILE IS A TEMPLATE. `.mergify.yml` is written from it and `.check-tree/repo.json` by `python3 ci/render_mergify.py --write`
+# (the priority rules depend on your work-item prefixes), and the PR check fails when the two disagree. Edit this file, never `.mergify.yml`.
+#
+# HOW A CHANGE LANDS
+#   1. The pull request's checks pass (pr-check.yml): lint, secret scan, the tests the change reaches, the description, one status `all-green`.
+#   2. It joins the queue on its own: `all-green`, not a draft, no conflict, no `hold` label, and master is healthy (below).
+#   3. Mergify batches 4 to 8 queued changes on a draft branch and the FULL suite runs once on that batch (queue-suite.yml: `queue-suite`).
+#   4. Green: the batch lands exactly as tested. Red: Mergify splits the batch to find the culprit and dequeues only it (no retry).
+#
+# MASTER IS GUARANTEED CLEAN. master-health.yml runs the full suite on every push to {{default_branch}} and copies its verdict, as the
+# status `master-health`, onto every open pull request. While master is red nothing enters the queue, except a change whose description
+# carries a `Fixes-breakage: <ID>` line: that one goes first of all.
+queue_rules:
+  - name: default
+    update_method: merge
+    merge_method: merge-batch
+    batch_size:
+      min: 4
+      max: 8
+    batch_max_wait_time: 2m
+    checks_timeout: 80m
+    max_checks_retries: 0
+    queue_conditions:
+      - base={{default_branch}}
+      - -draft
+      - -conflict
+      - -closed
+      - check-success=all-green
+      - or:
+          - check-success=master-health
+          - "body~=(?m)^Fixes-breakage:\\s*\\S+"
+    merge_conditions:
+      - check-success=queue-suite
+
+# Who goes first when the queue is busy. Product work before process work; a fix for a red master before everything.
+# Generated from `product_prefixes` and `process_prefixes` in `.check-tree/repo.json`. Mergify takes the FIRST matching rule.
+priority_rules:
+# @@PRIORITY_RULES@@
+
+pull_request_rules:
+  - name: queue a green, non-held change
+    conditions:
+      - base={{default_branch}}
+      - -draft
+      - -closed
+      - -conflict
+      - -label=hold
+      - -title~=^HOLD
+      - check-success=all-green
+      - or:
+          - check-success=master-health
+          - "body~=(?m)^Fixes-breakage:\\s*\\S+"
+    actions:
+      queue:
+        name: default

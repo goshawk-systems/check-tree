@@ -1,0 +1,67 @@
+# The full suite, once per batch, on the merge queue's draft branch. Its status `queue-suite` is the queue's merge condition:
+# the batch lands only if this passes, exactly as tested. master-health.yml calls this same workflow on every push to master.
+#
+# Shards: a matrix whose size comes from the durations file (`durations_file`, {test file: seconds}) when it exists, else
+# min(4, test files). `setup_command` in `.check-tree/repo.json` installs dependencies; `test_command` runs the tests.
+name: queue-suite
+
+on:
+  push:
+    branches: ["mergify/merge-queue/**"]
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      total: ${{ steps.plan.outputs.total }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: plan
+        run: python3 ci/shards.py matrix >> "$GITHUB_OUTPUT"
+
+  suite:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shard ${{ matrix.shard }} of ${{ needs.plan.outputs.total }}
+        env:
+          SHARD: ${{ matrix.shard }}
+          TOTAL: ${{ needs.plan.outputs.total }}
+          CHECK_TREE_SETUP: "1"
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(python3 ci/shards.py files --shard "$SHARD/$TOTAL")
+          if [ "${#files[@]}" -gt 0 ]; then
+            bash ci/run_tests.sh "${files[@]}"
+          elif [ "$(python3 ci/shards.py discovered)" = "0" ]; then
+            # no test file to hand out (a non-Python test command): run it whole, once
+            if [ "$SHARD" = "1" ]; then bash ci/run_tests.sh; else echo "nothing for this shard"; fi
+          else
+            echo "nothing for this shard"
+          fi
+
+  queue-suite:
+    name: queue-suite
+    if: ${{ always() }}
+    needs: [plan, suite]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Every shard passed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          echo "$NEEDS" | jq -e 'all(.[]; .result == "success")' > /dev/null
