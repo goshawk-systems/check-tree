@@ -379,7 +379,7 @@ def test_going_back_to_draft_and_other_pr_commands_are_never_refused(repo, ready
 
 def test_a_revert_and_a_fixes_breakage_description_are_exempt(repo, ready_gh):
     assert ready(repo, ready_gh, "gh pr ready 5", **checks(), **{"pr view": {**PULL, "title": "Revert the thing"}}) is None
-    assert ready(repo, ready_gh, "gh pr ready 5", **checks(), **{"pr view": {**PULL, "body": "x\nThis reverts commit abc."}}) is None
+    assert ready(repo, ready_gh, "gh pr ready 5", **checks(), **{"pr view": {**PULL, "body": "x\nThis reverts commit 0d09bfa0ff1234567890abcdef1234567890abcd."}}) is None
     assert ready(repo, ready_gh, "gh pr ready 5", **checks(),
                  **{"pr view": {**PULL, "body": "Refs-item: APP-1\nFixes-breakage: main is red"}}) is None
 
@@ -403,3 +403,20 @@ def test_a_mutation_whose_pull_request_cannot_be_read_is_refused(repo, ready_gh)
 def test_the_ready_rule_passes_when_gh_or_the_api_cannot_answer(repo, ready_gh):
     assert call("pr_open_rules.py", bash(repo, "gh pr ready 5"), repo, env={"PATH": "/usr/bin:/bin"}) is None   # no gh
     assert ready(repo, ready_gh, "gh pr ready 5") is None                          # no check-runs route: the API fails
+
+
+def test_only_a_real_revert_is_exempt_not_a_description_that_mentions_the_phrase():
+    """Goshawk #147 (2026-11-05) explained the exemption in its own description ("or `This reverts commit`") and the ready gate let it
+    through untested. A revert is a title starting `Revert` or a line git writes: `This reverts commit <sha>.`"""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("por_revert", HOOKS / "pr_open_rules.py")
+    import sys as _sys
+    _sys.path.insert(0, str(HOOKS))
+    try:
+        m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+    finally:
+        _sys.path.remove(str(HOOKS))
+    assert m.is_revert('Revert "add x"', "")
+    assert m.is_revert("undo", "Undo it.\n\nThis reverts commit 0d09bfa0ff1234567890abcdef1234567890abcd.\n")
+    assert not m.is_revert("PROC-159: ready gate", "- Exempt: a title starting `Revert`, or `This reverts commit`, as before.")
+    assert not m.is_revert("x", "This reverts commit nothing in particular")

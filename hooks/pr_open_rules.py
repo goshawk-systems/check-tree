@@ -49,6 +49,13 @@ def _open_pr_bodies(cwd: str) -> list:
 
 
 GREEN_CHECK = "all-green"
+REVERT_BODY = re.compile(r"^This reverts commit [0-9a-f]{7,40}\b", re.M)
+
+
+def is_revert(title: str, body: str) -> bool:
+    """A revert as git writes one: a title starting `Revert`, or a line that starts `This reverts commit <sha>`. A description that only
+    mentions the phrase (one explaining this very exemption, Goshawk #147, 2026-11-05) is not a revert."""
+    return bool(re.match(r"\s*revert\b", title or "", re.I) or REVERT_BODY.search(body or ""))
 
 
 def _gh_json(args: list, cwd: str):
@@ -104,7 +111,7 @@ def ready_refusal(call: S.ReadyCall) -> "str | None":
     if not pr or not pr["sha"]:
         return None                       # gh or the API is unavailable: this rule cannot be checked
     body, title = pr["body"], pr["title"]
-    if re.search(r"^\s*Fixes-breakage:", body, re.M | re.I) or re.match(r"\s*revert\b", title, re.I) or "This reverts commit" in body:
+    if re.search(r"^\s*Fixes-breakage:", body, re.M | re.I) or is_revert(title, body):
         return None
     state = _green_state(pr["slug"], pr["sha"], call.cwd)
     if state is None or state == "success":
@@ -129,7 +136,7 @@ def refusal(call: S.PrCall, cfg: dict) -> "str | None":
         code, body = C.core.git(pathlib.Path(call.cwd), "log", "--format=%B", f"origin/{base}..HEAD")
         body = body if code == 0 else ""
     escape = bool(re.search(r"^\s*Fixes-breakage:", body, re.M | re.I))
-    revert = bool(re.match(r"\s*revert\b", call.title, re.I)) or "This reverts commit" in body
+    revert = is_revert(call.title, body)
     ids = item_ids(body)
     if ids and not escape and all(i.split("-")[0] in cfg["process_prefixes"] for i in ids) and not any(
             i in cfg["freeze_allowed_items"] for i in ids):
