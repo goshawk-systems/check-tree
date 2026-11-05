@@ -57,6 +57,15 @@ open it as an issue on github.com/goshawk-systems/check-tree with the `feedback`
 text to post themselves. Nothing is sent without their yes, and nothing about their code or company goes in
 unless they put it there.
 
+## 6. The process skills (short; read the ones that apply)
+- `/check-tree:autonomy`: run unattended; stop only for the five production actions.
+- `/check-tree:done-at-the-consumer`: done means shown where it is used.
+- `/check-tree:spend`: the bill follows CI volume; quote monthly; keep a ceiling.
+- `/check-tree:grounding`: read the code that runs before claiming how it behaves.
+- `/check-tree:work-by-capability`: a step is one capability in one PR.
+The agents `builder` and `test-author` are the generic builder and defining-test writer.
+To set a whole repository up (hooks, CLAUDE.md, required reads, pipeline) run `/check-tree:setup-repo`.
+
 ## Never
 - Install anything or change their repo without saying what and getting a yes.
 - Oversell it. If their problem is something else, say so.
