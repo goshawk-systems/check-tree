@@ -164,6 +164,12 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$QUEUE_DRAFT" = "true" ]; then echo "queue draft: the queue reads master-health on the original pull request"; exit 0; fi
+          if [ ! -f ci/master_health.py ]; then
+            # The base branch predates the package (the PR that adopts it): no health verdict exists yet, as when master has none.
+            gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" -f state=success -f context=master-health \
+              -f description="master has no health verdict yet (the base branch predates check-tree)"
+            exit 0
+          fi
           python3 ci/master_health.py copy-to-pr --branch "$BASE_BRANCH" --sha "$HEAD_SHA"
 
   all-green:

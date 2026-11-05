@@ -1,9 +1,9 @@
 # One recovery rule (a lost job is re-run once, a real failure never) and the stuck-PR alarm.
-# The names under workflow_run must equal the `name:` of pr-check.yml and queue-suite.yml.
+# The names under workflow_run must equal the `name:` of pr-check.yml and queue-suite.yml (`pr-check`, `queue-suite`).
 name: Recover
 on:
   workflow_run:
-    workflows: ["PR check", "Queue suite"]
+    workflows: ["pr-check", "queue-suite"]
     types: [completed]
   schedule:
     - cron: "*/10 * * * *"

@@ -153,6 +153,10 @@ def check_pr(gh: Gh, cfg: dict, pr: dict, now: dt.datetime, minutes: int = STUCK
         return {**out, "action": "none", "reason": "draft"}
     required = cfg.get("required_statuses") or []
     states = {s["context"]: s["state"] for s in (gh.get(f"/repos/{gh.repo}/commits/{sha}/status") or {}).get("statuses") or []}
+    # `all-green` is a check run, not a commit status: read both, so a required name is found whichever it is.
+    for cr in (gh.get(f"/repos/{gh.repo}/commits/{sha}/check-runs?per_page=100") or {}).get("check_runs") or []:
+        if cr.get("status") == "completed" and cr.get("conclusion") != "skipped" and cr.get("name") not in states:
+            states[cr["name"]] = "success" if cr.get("conclusion") in ("success", "neutral") else "failure"
     if any(states.get(c) in ("failure", "error") for c in required):
         return {**out, "action": "none", "reason": "a required status failed: a real failure"}
     stuck = [c for c in required if states.get(c) not in ("success",)]

@@ -387,3 +387,15 @@ def test_collect_reads_one_day_of_merged_prs():
 def test_settings_default_when_the_file_is_missing(tmp_path):
     cfg = load_settings(tmp_path)
     assert cfg["default_branch"] == "main" and cfg["workflows"]["pr_check"] == "pr-check.yml" and cfg["required_statuses"] == ["pr-check"]
+
+
+
+def test_recover_listens_to_the_workflows_by_their_real_names():
+    """A workflow_run trigger names workflows by their `name:`; a mismatch means the trigger never fires (found when
+    installing into Goshawk, 2026-11-05)."""
+    import yaml
+    wf = PKG / "templates" / "repo" / ".github" / "workflows"
+    names = {yaml.safe_load((wf / f).read_text())["name"] for f in ("pr-check.yml", "queue-suite.yml")}
+    rec = yaml.safe_load((wf / "recover.yml").read_text())
+    on = rec.get("on") or rec.get(True)
+    assert set(on["workflow_run"]["workflows"]) == names, (on["workflow_run"]["workflows"], names)
