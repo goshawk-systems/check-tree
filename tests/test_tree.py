@@ -306,3 +306,11 @@ def test_the_headline_counts_product_checks_not_test_setup(approved):
     core.run_checks(approved, "demo")
     line = core.render_score(core.score(approved, "demo"), core.load_tree(approved, "demo", "main")).splitlines()[0]
     assert line.startswith("demo: 0 of 1 product checks pass (1/2 including test setup)"), line
+
+
+def test_a_shell_usage_error_is_recognised_in_dash_and_bash_wording():
+    """Linux CI's /bin/sh is dash ("Illegal option"); macOS's is bash ("invalid option"). Found on Goshawk's first CI
+    run, 2026-11-05: the dash wording read as a real failure."""
+    assert core.NOT_A_REAL_FAILURE.search("/bin/sh: 0: Illegal option --")
+    assert core.NOT_A_REAL_FAILURE.search("sh: --: invalid option")
+    assert not core.NOT_A_REAL_FAILURE.search("AssertionError: assert 1 == 2")
