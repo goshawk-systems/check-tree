@@ -470,3 +470,17 @@ def test_a_template_file_is_never_selected_as_a_test():
     assert not mod.is_test(".claude/check-tree/templates/test_claude_md_size.py")
     assert not mod.is_test("templates/repo/tests/test_claude_md_size.py")
     assert mod.is_test("tests/test_claude_md_size.py") and mod.is_test("engine/talon/test_x.py")
+
+
+def test_test_roots_keeps_another_projects_tests_out_of_the_selection():
+    """A repo can hold other projects' tests (Goshawk's sample targets under rehearsal/); `test_roots` in the settings limits
+    the selection to the repo's own (found on Goshawk #140, 2026-11-05: a sample target's test needed a module Goshawk never installs)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("impacted_tests_roots", PKG / "pipeline" / "impacted_tests.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert mod.is_test("rehearsal/hostile-estate/tests/test_jobs.py")
+    mod.TEST_ROOTS = ("engine", "tests", ".claude")
+    assert not mod.is_test("rehearsal/hostile-estate/tests/test_jobs.py")
+    assert mod.is_test("engine/talon/test_x.py") and mod.is_test("tests/test_claude_md_size.py")
+    assert not mod.is_test("engineering/test_x.py"), "a root is a folder, not a name prefix"

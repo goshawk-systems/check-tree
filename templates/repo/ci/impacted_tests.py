@@ -43,9 +43,16 @@ def changed_files(base: str) -> list[str]:
     return [line for line in out.stdout.splitlines() if line.strip()]
 
 
+# `test_roots` in the settings file: when set, only a test under one of these folders is this repo's test (a repo can hold
+# other projects' tests: sample targets, run artifacts). Empty: a test anywhere counts.
+TEST_ROOTS: tuple[str, ...] = ()
+
+
 def is_test(path: str, tests_dir: str = "tests") -> bool:
     """A test file by name, wherever it lives (`tests_dir` is kept for callers; a src/pkg/test_x.py is a test too)."""
     name = pathlib.PurePosixPath(path).name
+    if TEST_ROOTS and not any(path == r.rstrip("/") or path.startswith(r.rstrip("/") + "/") for r in TEST_ROOTS):
+        return False
     if "/templates/" in f"/{path}":  # data the installer copies into a repo, never a test of this one
         return False
     return path.endswith(".py") and (name.startswith("test_") or name.endswith("_test.py"))
@@ -285,6 +292,8 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     cfg = load_json(a.settings)
     tests_dir = a.tests or cfg.get("tests_dir") or "tests"
+    global TEST_ROOTS
+    TEST_ROOTS = tuple(cfg.get("test_roots") or ())
     src_roots = a.src or cfg.get("src_roots") or ["src"]
     base = a.base or f"origin/{cfg.get('default_branch') or 'main'}"
     dur = {k: float(v) for k, v in load_json(a.durations or cfg.get("durations_file") or ".check-tree/durations.json").items()
