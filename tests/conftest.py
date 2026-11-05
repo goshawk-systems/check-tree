@@ -10,6 +10,10 @@ import sys
 import pytest
 
 PKG = pathlib.Path(__file__).resolve().parent.parent
+# The package root holds the `checktree` module; put it on the path so the tests import it from wherever pytest runs
+# (in an adopting repo the package lives in a subfolder, e.g. .claude/check-tree).
+if str(PKG) not in sys.path:
+    sys.path.insert(0, str(PKG))
 HOOKS = PKG / "hooks"
 CLI = [sys.executable, str(PKG / "bin" / "check-tree")]
 
