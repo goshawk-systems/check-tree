@@ -503,3 +503,17 @@ def test_an_empty_shard_prints_nothing_and_the_workflows_drop_blank_lines(tmp_pa
         assert lines and all(ln.rstrip().endswith('| sed "/^$/d")') for ln in lines), name
     src = (CI / "shards.py").read_text()
     assert "if parts[i - 1]:" in src
+
+
+def test_a_description_edit_re_runs_the_description_jobs_one_attempt_at_a_time():
+    """Re-running a job starts a new attempt of the run and GitHub refuses another re-run until it ends; the re-check must wait between
+    the two jobs and read each id from the latest attempt (found on Goshawk #140, 2026-11-05: the failed pr-body was refused)."""
+    doc = wf("pr-body-recheck.yml")
+    assert triggers(doc) == {"pull_request": {"types": ["edited"]}}
+    assert "all-green" not in doc["jobs"]
+    script = doc["jobs"]["body-recheck"]["steps"][0]["run"]
+    loop = script[script.index("for name in pr-size pr-body"):]
+    assert loop.index('settle "$id"') < loop.index("/rerun")
+    assert "$api/runs/$id/jobs" in loop, "each job id is read again from the latest attempt"
+    p = subprocess.run(["bash", "-n"], input=script, capture_output=True, text=True)
+    assert p.returncode == 0, p.stderr

@@ -1,0 +1,63 @@
+# A description edit re-judges the description without a push: it re-runs the `pr-size` and `pr-body` jobs (and, through them, `all-green`)
+# of this head's latest completed pr-check run. Those jobs read the description live from the API, so the re-run sees the new text; if the
+# latest run is still going it will read the new text itself. A draft and a merge-queue draft do nothing.
+#
+# WHY A WORKFLOW OF ITS OWN, not an `edited` trigger on pr-check.yml: every job of pr-check skipped on an edit would still leave a SKIPPED
+# `all-green` check run on the head, and GitHub counts a skipped required check as success, which could mask a failing `all-green`.
+# Here no job is named `all-green`, and the concurrency group is its own, so an edit never cancels a code-push run.
+#
+# ONE JOB AT A TIME: re-running a job starts a new attempt of the whole run, and GitHub refuses a second re-run until that attempt ends
+# (Goshawk #140, 2026-11-05: pr-size was re-run, the failed pr-body was refused, and all-green stayed red on a passing description). So
+# each job is re-run after the previous attempt completes, and its id is read from the latest attempt.
+name: pr-body-recheck
+
+on:
+  pull_request:
+    types: [edited]
+
+concurrency:
+  group: pr-body-recheck-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  body-recheck:
+    if: ${{ !github.event.pull_request.draft && !startsWith(github.head_ref, 'mergify/merge-queue/') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Re-run pr-size, then pr-body, on the head's latest completed run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          THIS_RUN: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          api="repos/$GITHUB_REPOSITORY/actions"
+          desc_jobs() { gh api "$api/runs/$1/jobs?per_page=100" --jq '.jobs[] | select((.name == "pr-size" or .name == "pr-body") and .conclusion != "skipped") | .name'; }
+          settle() {  # wait for the run's current attempt to end (at most 5 minutes)
+            for _ in $(seq 60); do [ "$(gh api "$api/runs/$1" --jq .status)" = completed ] && return 0; sleep 5; done
+            echo "run $1 did not settle within 5 minutes" >&2; return 1
+          }
+          runs="$(gh api "$api/workflows/pr-check.yml/runs?head_sha=$HEAD_SHA&event=pull_request&per_page=30" \
+                  --jq '[.workflow_runs[] | select(.id != ('"$THIS_RUN"'))] | sort_by(.created_at) | reverse | .[] | "\(.id) \(.status)"')"
+          while read -r id status; do
+            [ -n "${id:-}" ] || continue
+            [ -n "$(desc_jobs "$id")" ] || continue
+            if [ "$status" != "completed" ]; then echo "run $id is still going: its description jobs read the new text themselves"; exit 0; fi
+            for name in pr-size pr-body; do
+              settle "$id"
+              j="$(gh api "$api/runs/$id/jobs?per_page=100" --jq '.jobs[] | select(.name == "'"$name"'" and .conclusion != "skipped") | .id' | head -1)"
+              [ -n "$j" ] || continue
+              gh api -X POST "$api/jobs/$j/rerun" > /dev/null
+              echo "re-ran $name (job $j) of run $id"
+              sleep 10   # let the new attempt register before the next settle reads the run's status
+            done
+            exit 0
+          done <<< "$runs"
+          echo "no earlier run of pr-check on this head (a draft, or the first run is still queued): nothing to re-run"
