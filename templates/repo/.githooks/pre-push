@@ -1,0 +1,43 @@
+#!/bin/sh
+# Pre-push: a secret scan over the pushed commits, then lint on the changed files only. No tests: the pipeline runs them.
+# Turn it on once per clone: git config core.hooksPath .githooks   (`check-tree workspace new` does it for you)
+# The commands come from .check-tree/repo.json (lint_command, default_branch), rendered here by check-tree init-repo.
+
+LINT_COMMAND='{{lint_command}}'
+DEFAULT_BRANCH='{{default_branch}}'
+LINT_FILES_REGEX='\.py$'        # which changed files the lint command understands; change it for another language
+ZERO=0000000000000000000000000000000000000000
+status=0
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ "$local_sha" = "$ZERO" ] && continue            # a branch deletion: nothing to scan
+  if [ "$remote_sha" = "$ZERO" ]; then              # a new branch: scan what it adds over the default branch
+    base=$(git merge-base "$local_sha" "origin/$DEFAULT_BRANCH" 2>/dev/null || true)
+    range=${base:+$base..}$local_sha
+  else
+    range="$remote_sha..$local_sha"
+  fi
+
+  if command -v gitleaks >/dev/null 2>&1; then
+    if ! gitleaks git --log-opts="$range" --redact --no-banner >/dev/null 2>&1; then
+      echo "pre-push: gitleaks found a possible secret in $range. Run: gitleaks git --log-opts=\"$range\" --redact" >&2
+      status=1
+    fi
+  else
+    echo "pre-push: WARNING gitleaks is not installed: this push was NOT scanned for secrets (brew install gitleaks)." >&2
+  fi
+
+  if [ -n "$LINT_COMMAND" ]; then
+    # the lint command's own trailing " ." (whole repo) is dropped so only the changed files are linted
+    cmd=${LINT_COMMAND% .}
+    files=$(git diff --name-only --diff-filter=ACMR "$range" 2>/dev/null | grep -E "$LINT_FILES_REGEX")
+    if [ -n "$files" ]; then
+      # shellcheck disable=SC2086
+      if ! echo "$files" | xargs $cmd; then
+        echo "pre-push: lint failed on the changed files ($LINT_COMMAND)." >&2
+        status=1
+      fi
+    fi
+  fi
+done
+exit $status
