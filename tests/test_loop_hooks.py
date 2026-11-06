@@ -53,6 +53,47 @@ def test_a_passing_check_is_not_dispatched_again(approved):
     assert decision(out) == "deny" and "already passes" in out["hookSpecificOutput"]["permissionDecisionReason"]
 
 
+# ── check_brief and a program approved under the loop (.claude/loop/programs), PROC-159 ──
+
+LOOP_TREE = '{"program": "lp", "objective": "x", "checks": []}\n'
+
+
+def commit_loop_program(repo, program="lp"):
+    d = repo / ".claude" / "loop" / "programs" / program
+    d.mkdir(parents=True)
+    (d / "checks.json").write_text(LOOP_TREE)
+    sh(repo, "git", "add", "-A")
+    sh(repo, "git", "commit", "-q", "-m", f"the loop's {program} tree")
+
+
+def test_a_loop_only_program_is_allowed_and_leaves_binding_to_loop_brief(approved):
+    commit_loop_program(approved)
+    out = dispatch(approved, "Build it.\nCheck: lp/obj")
+    assert decision(out) != "deny", out
+    assert (out or {}).get("hookSpecificOutput", {}).get("updatedInput") is None  # no brief of its own
+    assert not (approved / ".check-tree" / "worktrees").exists()  # and no worktree
+    assert sh(approved, "git", "rev-parse", "--verify", "-q", "check-tree/lp", check=False).returncode != 0
+
+
+def test_a_loop_program_only_in_the_working_copy_is_still_refused(approved):
+    d = approved / ".claude" / "loop" / "programs" / "lp"
+    d.mkdir(parents=True)
+    (d / "checks.json").write_text(LOOP_TREE)  # never committed: the base ref does not have it
+    out = dispatch(approved, "Check: lp/obj")
+    assert decision(out) == "deny" and "no tree for program 'lp'" in out["hookSpecificOutput"]["permissionDecisionReason"]
+
+
+def test_a_check_tree_program_is_still_approval_checked_when_a_loop_program_exists(repo):
+    commit_loop_program(repo, "demo")  # same name under both: the check-tree tree wins and is validated as before
+    out = dispatch(repo, "Check: demo/obj")
+    assert decision(out) == "deny" and "not approved" in out["hookSpecificOutput"]["permissionDecisionReason"]
+
+
+def test_a_program_in_neither_place_is_refused(approved):
+    out = dispatch(approved, "Check: ghost/obj")
+    assert decision(out) == "deny" and "no tree for program 'ghost'" in out["hookSpecificOutput"]["permissionDecisionReason"]
+
+
 # ── check_stop ──
 
 def bind(approved, tmp_path):

@@ -4,6 +4,10 @@
 Refused when the program's tree (the binding copy on the base branch) is missing, invalid or not approved by
 the owner, when the check does not exist, already passes, still waits on a check it needs, or has used up its
 time budget (the owner cuts, reshapes or extends it). A dispatch with no `Check:` line is left alone.
+
+A program with no check-tree tree on the base ref but a loop tree there (`.claude/loop/programs/<p>/checks.json`,
+approved under the execution loop) is not this hook's: it allows the dispatch with no brief and no worktree, and
+`.claude/hooks/loop-brief.py` binds it. It refuses only when neither tree exists on the base ref (PROC-159).
 """
 from __future__ import annotations
 
@@ -11,6 +15,8 @@ import _common as C
 import agent_cap
 import model_gate
 from checktree import core
+
+LOOP_PROGRAMS_DIR = ".claude/loop/programs"
 
 
 def main(data: dict) -> None:
@@ -30,6 +36,8 @@ def main(data: dict) -> None:
     tree = core.load_tree(root, program, ref)
     note = ""
     if tree is None:
+        if core.read_at(root, ref, f"{LOOP_PROGRAMS_DIR}/{program}/checks.json") is not None:
+            return  # a loop program: loop-brief.py validates and binds it; hand out no brief or worktree here
         C.deny(f"check-tree: no tree for program {program!r} at {ref}{note}. Commit "
                f"{core.tree_path(program)} to {cfg['base_ref']} and have the owner approve it.")
         return
