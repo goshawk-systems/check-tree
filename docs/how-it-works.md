@@ -75,13 +75,17 @@ happens to sit in. A session opened in a checkout a day behind still reads today
 | `brief <program> <check>` | The brief a builder gets for one check. |
 | `land <program> <check>` | Merges the latest passing builder branch for that check into the integration branch (fast-forward after bringing the builder up to date). |
 | `card <program> [--days 7]` | A short summary to share: passing count now and N days ago, whether the goal is reached, what newly passes. No internals. |
-| `discard <program> <check>` | Removes every builder worktree and branch for one check, unlanded work included. For work the lead rejected. The integration branch stays, and the check's time budget keeps counting from its first dispatch. |
-| `clean <program> [--hours N]` | Removes builder worktrees that were landed, or that never got a commit and are older than N hours (default 24). A worktree with uncommitted or unlanded work is always kept. |
+| `discard <program> <check>` | Releases every builder worktree and branch for one check, under the same rule as `clean` (clean, and HEAD equal to `origin/<branch>`); one that is not is kept and named. For work the lead rejected. The integration branch stays, and the check's time budget keeps counting from its first dispatch. |
+| `clean <program> [--hours N]` | Removes builder worktrees that were landed, or that never got a commit and are older than N hours (default 24). A worktree with uncommitted, unlanded or unpushed work is always kept, and never forced. |
 | `progress <program> "<line>"` | Adds a line to the program's progress log. |
 | `list` | Every program and its pass count. |
 
-Local state (results, dispatches, progress, history) lives in `.check-tree/state/` and builders' worktrees in
-`.check-tree/worktrees/`. Both are ignored by git.
+Local state (results, dispatches, progress, history) lives in `.check-tree/state/`, ignored by git. Builders'
+worktrees live OUTSIDE the clone, in a sibling folder `<clone-parent>/<clone-name>.wt/<program>__<check>__<sfx>`, so a
+scanner that walks the whole clone never meets a second copy of the code. A worktree is released (`clean`, `discard`)
+only when `git status --porcelain` is empty and its HEAD equals `origin/<branch>` (fetched first), without `--force`;
+otherwise it is kept and named in the report. The package never pushes: the lead pushes the branch from the base clone
+by ref, `git -C <base> push origin <branch>`.
 
 ## The hooks, in order of a builder's life
 

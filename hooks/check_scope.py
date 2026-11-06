@@ -32,7 +32,7 @@ def main(data: dict) -> None:
     wt_program = C.worktree_program(root, str(target_path))
     if wt_program:
         # inside a builder worktree: relative to that worktree's own root
-        wt_root = root / core.WORKTREES_DIR
+        wt_root = core.worktrees_dir(root)
         rel_parts = target_path.relative_to(wt_root.resolve()).parts[1:]
         rel = str(pathlib.Path(*rel_parts)) if rel_parts else ""
     else:

@@ -19,6 +19,10 @@ sys.path.insert(0, str(HERE.parent))
 from checktree import core  # noqa: E402
 
 AGENT_TOOLS = ("Agent", "Task")
+# Agent types that only read: a dispatch to one gets no brief and no worktree even if its prompt quotes a `Check:` line.
+# Mirrors READ_ONLY_TYPES in .claude/loop/looplib.py (a test pins that this covers it), plus the check-tree reviewers.
+READ_ONLY_TYPES = frozenset({"loop-evaluator", "loop-planner", "check-evaluator", "check-planner", "pr-antagonist",
+                             "pr-antagonist-residual", "Explore", "Plan", "claude-code-guide", "statusline-setup"})
 EDIT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 
 
@@ -140,7 +144,7 @@ def tool_uses(path: Optional[str]) -> list[dict]:
 def worktree_program(root: pathlib.Path, file_path: str) -> Optional[str]:
     """If file_path is inside a builder worktree, the program that worktree belongs to."""
     try:
-        rel = pathlib.Path(file_path).resolve().relative_to((root / core.WORKTREES_DIR).resolve())
+        rel = pathlib.Path(file_path).resolve().relative_to(core.worktrees_dir(root).resolve())
     except ValueError:
         return None
     name = rel.parts[0] if rel.parts else ""

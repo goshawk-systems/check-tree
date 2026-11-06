@@ -290,6 +290,10 @@ def test_discard_removes_a_rejected_builders_work(approved, tmp_path):
     (wt / "notes.txt").write_text("rejected work\n")
     sh(wt, "git", "add", "notes.txt")
     sh(wt, "git", "commit", "-q", "-m", "rejected")
+    # the release rule (PROC-159): a worktree goes only when clean and at origin/<branch>
+    sh(tmp_path, "git", "init", "-q", "--bare", str(tmp_path / "origin.git"))
+    sh(approved, "git", "remote", "add", "origin", str(tmp_path / "origin.git"))
+    sh(approved, "git", "push", "-q", "origin", sh(wt, "git", "rev-parse", "--abbrev-ref", "HEAD").stdout.strip())
     out = cli(approved, "discard", "demo", "obj").stdout
     assert "discarded" in out and not wt.exists()
 

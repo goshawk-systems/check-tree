@@ -72,6 +72,7 @@ def test_a_loop_only_program_is_allowed_and_leaves_binding_to_loop_brief(approve
     assert decision(out) != "deny", out
     assert (out or {}).get("hookSpecificOutput", {}).get("updatedInput") is None  # no brief of its own
     assert not (approved / ".check-tree" / "worktrees").exists()  # and no worktree
+    assert not core.worktrees_dir(approved).exists()
     assert sh(approved, "git", "rev-parse", "--verify", "-q", "check-tree/lp", check=False).returncode != 0
 
 
@@ -189,7 +190,7 @@ def test_a_dispatch_another_guard_refuses_leaves_no_worktree(approved):
     out = dispatch(approved, "Fix the adder.\nCheck: demo/obj", tool_input={
         "prompt": "Fix the adder.\nCheck: demo/obj", "model": "opus"})
     assert decision(out) == "deny" and "expensive" in out["hookSpecificOutput"]["permissionDecisionReason"]
-    wt_dir = approved / ".check-tree" / "worktrees"
+    wt_dir = core.worktrees_dir(approved)
     assert not wt_dir.exists() or not any(wt_dir.iterdir())
 
 
@@ -208,6 +209,11 @@ def test_clean_removes_landed_and_abandoned_worktrees_and_keeps_unlanded_work(ap
     (wt_work / "notes.txt").write_text("in progress\n")
     sh(wt_work, "git", "add", "notes.txt")
     sh(wt_work, "git", "commit", "-q", "-m", "unlanded work")
+    # the release rule (PROC-159): only a clean worktree whose HEAD is on origin goes; wt_work stays unpushed
+    sh(tmp_path, "git", "init", "-q", "--bare", str(tmp_path / "origin.git"))
+    sh(approved, "git", "remote", "add", "origin", str(tmp_path / "origin.git"))
+    for wt in (wt_done, wt_idle):
+        sh(approved, "git", "push", "-q", "origin", sh(wt, "git", "rev-parse", "--abbrev-ref", "HEAD").stdout.strip())
     report = cli(approved, "clean", "demo", "--hours", "0").stdout
     assert f"removed {wt_done.name} (landed)" in report
     assert f"removed {wt_idle.name} (abandoned with no work)" in report

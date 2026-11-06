@@ -3,7 +3,8 @@
 
 Refused when the program's tree (the binding copy on the base branch) is missing, invalid or not approved by
 the owner, when the check does not exist, already passes, still waits on a check it needs, or has used up its
-time budget (the owner cuts, reshapes or extends it). A dispatch with no `Check:` line is left alone.
+time budget (the owner cuts, reshapes or extends it). A dispatch with no `Check:` line is left alone, and so is one to a read-only agent type (`_common.READ_ONLY_TYPES`: the
+evaluators, the planners, the antagonists, Explore, Plan, ...), which gets no brief and no worktree.
 
 A program with no check-tree tree on the base ref but a loop tree there (`.claude/loop/programs/<p>/checks.json`,
 approved under the execution loop) is not this hook's: it allows the dispatch with no brief and no worktree, and
@@ -27,6 +28,8 @@ def main(data: dict) -> None:
     if not binding:
         return
     program, check_id = binding
+    if str(tool_input.get("subagent_type") or "general-purpose") in C.READ_ONLY_TYPES:
+        return  # a reviewer reads; it gets no brief and no worktree (the same carve-out as loop-brief.py)
     root = C.root_for(data)
     if root is None:
         C.deny("check-tree: this session is not inside a git repository, so `Check:` cannot be bound.")
@@ -83,7 +86,7 @@ def main(data: dict) -> None:
                        "session": data.get("session_id")})
     core.progress(root, program, f"dispatched a builder on {check_id}", check=check_id, branch=branch)
     tool_input["prompt"] = tool_input.get("prompt", "") + "\n" + core.brief(
-        tree, check, s, worktree, branch, tree.integration_branch)
+        tree, check, s, worktree, branch, tree.integration_branch, base=root)
     C.allow_with_input(tool_input, f"check-tree: bound to {program}/{check_id}; worktree {worktree}")
 
 

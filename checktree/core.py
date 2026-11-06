@@ -26,7 +26,10 @@ from typing import Optional
 
 KINDS = ("objective", "component", "harness")
 STATE_DIR = ".check-tree/state"
-WORKTREES_DIR = ".check-tree/worktrees"
+# Builder worktrees live OUTSIDE the clone, in a sibling folder `<clone-parent>/<clone-name>.wt/` (PROC-159, the
+# pipeline lead's rule of 2026-11-06): a worktree inside the clone is walked into by every whole-tree scanner
+# (a test that globs the repository, a linter, an indexer) as a second copy of the code.
+WORKTREES_SUFFIX = ".wt"
 PROGRAMS_DIR = ".check-tree/programs"
 CONFIG_PATH = ".check-tree/config.json"
 
@@ -713,11 +716,16 @@ def ensure_integration_branch(root: pathlib.Path, tree: Tree, cfg: dict) -> str:
     return name
 
 
+def worktrees_dir(root: pathlib.Path) -> pathlib.Path:
+    """The folder holding a clone's builder worktrees: a SIBLING of the clone, never inside it."""
+    return root.parent / f"{root.name}{WORKTREES_SUFFIX}"
+
+
 def make_worktree(root: pathlib.Path, tree: Tree, check_id: str, cfg: dict) -> tuple[pathlib.Path, str]:
     integ = ensure_integration_branch(root, tree, cfg)
     suffix = hashlib.sha1(f"{check_id}{time.time()}".encode()).hexdigest()[:6]
     branch = f"ct/{tree.program}/{check_id}-{suffix}"
-    path = root / WORKTREES_DIR / f"{tree.program}__{check_id}__{suffix}"
+    path = worktrees_dir(root) / f"{tree.program}__{check_id}__{suffix}"
     path.parent.mkdir(parents=True, exist_ok=True)
     code, out = git(root, "worktree", "add", "-q", "-b", branch, str(path), integ)
     if code != 0:
@@ -725,22 +733,67 @@ def make_worktree(root: pathlib.Path, tree: Tree, check_id: str, cfg: dict) -> t
     return path, branch
 
 
+# NOTHING IN THIS PACKAGE PUSHES. A builder's branch moves by `check-tree land` (a merge and a local update-ref on the
+# integration branch); origin is only ever READ here (fetch, rev-parse). Getting a builder's work onto origin is the
+# lead's act, by ref from the BASE clone: `git -C <base> push origin <branch>`, never from inside a worktree (whose `.git`
+# is a file). The release rule below is what makes that push matter: a worktree is released only once it is there.
+# tests/test_worktree_release.py pins that no git push is run.
+
+def release_worktree(root: pathlib.Path, wt: pathlib.Path, cfg: dict) -> tuple[bool, str, str]:
+    """Release one builder worktree, or say why not. Returns (released, branch, reason).
+
+    The one rule: after fetching `origin/<branch>`, the worktree is released ONLY when `git status --porcelain` in it
+    is empty AND its HEAD equals that ref. Release is `git worktree remove` (never `--force`, so git itself refuses a
+    dirty tree) and then the local branch is deleted, which is safe because the same commit is on origin. Anything
+    else is left exactly in place; the caller reports it by name."""
+    remote = cfg.get("remote") or "origin"
+    code, branch = git(wt, "rev-parse", "--abbrev-ref", "HEAD")
+    if code != 0 or not branch or branch == "HEAD":
+        return False, "", "not a working worktree on a branch; look at it by hand"
+    code, dirty = git(wt, "status", "--porcelain")
+    if code != 0:
+        return False, branch, "its status cannot be read; look at it by hand"
+    if dirty.strip():
+        return False, branch, f"uncommitted work ({len(dirty.splitlines())} path(s))"
+    # fetch that ref first; a failed fetch (offline, or the branch is not on origin) leaves whatever is cached
+    git(root, "fetch", "-q", remote, f"+refs/heads/{branch}:refs/remotes/{remote}/{branch}", timeout=120)
+    on_origin = head_of(root, f"refs/remotes/{remote}/{branch}")
+    head = head_of(wt, "HEAD")
+    if not on_origin:
+        return False, branch, f"{branch} is not on {remote}; push it from the base clone: git -C {root} push {remote} {branch}"
+    if head != on_origin:
+        ahead = git(root, "rev-list", "--count", f"{remote}/{branch}..{head}")[1].strip()
+        return False, branch, (f"HEAD is not {remote}/{branch} ({ahead or '?'} commit(s) not on {remote}); "
+                               f"push it from the base clone: git -C {root} push {remote} {branch}")
+    code, out = git(root, "worktree", "remove", str(wt))
+    if code != 0:
+        return False, branch, f"git would not remove it: {out.splitlines()[-1] if out else 'unknown'}"
+    git(root, "worktree", "prune")
+    # the branch is on origin at this very commit, so nothing is lost; `-d` first, then drop the ref by its checked value
+    if git(root, "branch", "-d", branch)[0] != 0:
+        git(root, "update-ref", "-d", f"refs/heads/{branch}", head)
+    try:
+        wt.parent.rmdir()  # the `<clone>.wt` folder, once it holds nothing
+    except OSError:
+        pass
+    return True, branch, ""
+
+
 def clean_worktrees(root: pathlib.Path, program: str, older_than_hours: float = 24) -> list[str]:
-    """Remove a program's builder worktrees that hold no work of their own: landed, or never committed to and
-    older than `older_than_hours`. A worktree with commits not on the integration branch is never removed."""
+    """Release a program's builder worktrees that hold no work of their own: landed, or never committed to and older
+    than `older_than_hours`, AND (the release rule) clean with HEAD equal to `origin/<branch>`. A worktree that holds
+    unlanded commits, uncommitted work or work not on origin is kept and named in the report; nothing is forced."""
     cfg = load_config(root)
     tree = load_tree(root, program, binding_ref(root, cfg)) or load_tree(root, program)
     integ = tree.integration_branch if tree else f"check-tree/{program}"
     report: list[str] = []
-    base = root / WORKTREES_DIR
+    base = worktrees_dir(root)
     if not base.is_dir():
         return report
     for wt in sorted(base.glob(f"{program}__*")):
         code, branch = git(wt, "rev-parse", "--abbrev-ref", "HEAD")
         if code != 0:
-            git(root, "worktree", "prune")
-            shutil.rmtree(wt, ignore_errors=True)
-            report.append(f"removed {wt.name} (not a working worktree)")
+            report.append(f"kept {wt.name}: not a working worktree; look at it by hand")
             continue
         _, dirty = git(wt, "status", "--porcelain")
         ahead = "0"
@@ -759,24 +812,27 @@ def clean_worktrees(root: pathlib.Path, program: str, older_than_hours: float = 
         if not landed and age_h < older_than_hours:
             report.append(f"kept {wt.name}: no commits yet, started {age_h:.1f}h ago (under {older_than_hours:g}h)")
             continue
-        git(root, "worktree", "remove", "--force", str(wt))
-        git(root, "branch", "-D", branch)
-        report.append(f"removed {wt.name} ({'landed' if landed else 'abandoned with no work'})")
+        released, _, why = release_worktree(root, wt, cfg)
+        if released:
+            report.append(f"removed {wt.name} ({'landed' if landed else 'abandoned with no work'})")
+        else:
+            report.append(f"kept {wt.name}: {why}")
     return report
 
 
 def discard_worktrees(root: pathlib.Path, program: str, check_id: str) -> list[str]:
-    """Remove every builder worktree and branch for one check, landed or not. For work the lead has rejected."""
+    """Release every builder worktree for one check, landed or not, for work the lead has rejected: under the same
+    rule as `clean_worktrees` (clean, HEAD equal to `origin/<branch>`). One that is not is kept and named."""
+    cfg = load_config(root)
     report = []
-    base = root / WORKTREES_DIR
+    base = worktrees_dir(root)
     for wt in sorted(base.glob(f"{program}__{check_id}__*")) if base.is_dir() else []:
-        _, branch = git(wt, "rev-parse", "--abbrev-ref", "HEAD")
-        git(root, "worktree", "remove", "--force", str(wt))
-        if branch and branch != "HEAD":
-            git(root, "branch", "-D", branch)
-        report.append(f"discarded {wt.name} ({branch})")
+        released, branch, why = release_worktree(root, wt, cfg)
+        report.append(f"discarded {wt.name} ({branch})" if released else f"kept {wt.name}: {why}")
     git(root, "worktree", "prune")
-    progress(root, program, f"{check_id}: builder work discarded by the lead", check=check_id)
+    discarded = [r for r in report if r.startswith("discarded")]
+    progress(root, program, f"{check_id}: builder work discarded by the lead ({len(discarded)} released, "
+                            f"{len(report) - len(discarded)} kept)", check=check_id)
     return report or [f"no worktrees for {program}/{check_id}"]
 
 
@@ -790,7 +846,7 @@ def owner_of(root: pathlib.Path, rel_path: str, trees: list[Tree]) -> Optional[T
 
 
 def brief(tree: Tree, check: dict, s: Score, worktree: Optional[pathlib.Path], branch: Optional[str],
-          integ: str) -> str:
+          integ: str, base: Optional[pathlib.Path] = None) -> str:
     frozen = check.get("frozen", [])
     lines = [
         "",
@@ -814,6 +870,10 @@ def brief(tree: Tree, check: dict, s: Score, worktree: Optional[pathlib.Path], b
             f"Branch: {branch} (made from the build's integration branch {integ}).",
             "Work ONLY in that worktree. Commit everything there.",
         ]
+        if base is not None and branch:
+            lines.append(f"To get your work onto origin, push by ref from the base clone: `git -C {base} push origin "
+                         f"{branch}` (never from inside the worktree). Your worktree is released only once it is "
+                         f"clean and at origin/{branch}.")
     lines += [
         "When you stop, the stop hook runs the check in your worktree. You will be sent back if it fails,",
         "if anything is uncommitted, or if a frozen file changed. Passing the check is the only way to be done.",

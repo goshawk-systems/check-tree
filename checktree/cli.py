@@ -12,8 +12,8 @@
     check-tree brief <program> <check>             the brief a builder gets for one check
     check-tree land <program> <check>              merge a builder's passing branch into the integration branch
     check-tree card <program> [--days 7]           a short progress summary you can share as is
-    check-tree discard <program> <check>           remove a rejected builder's worktrees and branches
-    check-tree clean <program> [--hours N]         remove builder worktrees that hold no unlanded work
+    check-tree discard <program> <check>           release a rejected builder's worktrees (only clean ones at origin)
+    check-tree clean <program> [--hours N]         release builder worktrees that are clean and at origin
     check-tree progress <program> "<line>"         add one line to the program's progress log
     check-tree list                                every program and its pass count
     check-tree init-repo [--target DIR] [--force]  set a repository up: the repo template, settings, hooks, CI
@@ -97,7 +97,7 @@ def cmd_init(a) -> int:
         cfg.write_text(json.dumps(config, indent=2) + "\n")
     gi = root / ".gitignore"
     lines = gi.read_text().splitlines() if gi.exists() else []
-    for entry in (".check-tree/state/", ".check-tree/worktrees/", "__pycache__/"):
+    for entry in (".check-tree/state/", "__pycache__/"):
         if entry not in lines:
             lines.append(entry)
     gi.write_text("\n".join(lines) + "\n")

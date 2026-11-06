@@ -18,4 +18,4 @@
 
 ## End of week
 - [ ] Pass count compared with 7 days ago. Not moved: roll back for this program and write down why.
-- [ ] `check-tree clean <program>` to remove finished worktrees.
+- [ ] `check-tree clean <program>` to release finished worktrees (it keeps, and names, any that is dirty or not at `origin/<branch>`: push those by ref from the base clone first).
