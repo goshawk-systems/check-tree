@@ -145,7 +145,10 @@ def test_the_branch_is_fetched_before_it_is_compared(approved, tmp_path):
     wt, _ = bind(approved, tmp_path)
     branch = branch_of(wt)
     commit_in(wt)
-    sh(approved, "git", "-C", str(approved), "push", "-q", str(origin), branch)  # by URL: no tracking ref written
+    sh(approved, "git", "-C", str(approved), "push", "-q", str(origin), branch)  # by URL
+    # Some git versions still write the tracking ref for a URL that matches a configured remote (CI's
+    # did, 2026-11-06), so the missing ref is FORCED rather than assumed: the premise holds on every git.
+    sh(approved, "git", "update-ref", "-d", f"refs/remotes/origin/{branch}", check=False)
     assert sh(approved, "git", "rev-parse", "--verify", "-q", f"refs/remotes/origin/{branch}",
               check=False).returncode != 0
     sh(approved, "git", "branch", "-f", "check-tree/demo", branch)
